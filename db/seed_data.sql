@@ -1,22 +1,4 @@
--- =============================================================================
--- LumenAid - Steganographic Data Exfiltration Detection Engine
--- seed_data.sql
---
--- Purpose  : Populates reference/lookup tables with realistic test values.
--- Run AFTER schema_migration.sql with:
---   psql -U <user> -d lumenaid -f seed_data.sql
---
--- What this seeds:
---   1. file_type_registry — all recognised file type codes
---   2. baselines          — entropy statistics per file type for anomaly detection
---   3. users              — one admin + one analyst for dev/testing
--- =============================================================================
-
--- ---------------------------------------------------------------------------
--- 1. file_type_registry
---    Populate the master list of supported file types.
---    The files.file_type FK requires every submitted file type to exist here.
--- ---------------------------------------------------------------------------
+-- this file is used to insert data into the tables 
 INSERT INTO file_type_registry (type_code, description)
 VALUES
     ('TEXT', 'Plain-text files (.txt, .csv, .log) — low, repetitive entropy'),
@@ -33,7 +15,6 @@ ON CONFLICT (type_code) DO UPDATE
     SET description = EXCLUDED.description;
 
 
--- ---------------------------------------------------------------------------
 -- 2. baselines
 --    Realistic entropy statistics derived from empirical corpus analysis.
 --
@@ -76,21 +57,13 @@ ON CONFLICT (file_type) DO UPDATE
         updated_at      = NOW();
 
 
--- ---------------------------------------------------------------------------
--- 3. users  (development / test accounts only — change passwords before prod)
--- ---------------------------------------------------------------------------
-INSERT INTO users (email, role)
-VALUES
-    ('admin@lumenaid.local',   'admin'),
-    ('analyst@lumenaid.local', 'analyst')
+INSERT INTO users (email, username, password_hash, role) VALUES
+('admin@lumenaid.local', 'admin', '$2b$12$placeholder_admin_hash', 'admin'),
+('analyst@lumenaid.local', 'analyst', '$2b$12$placeholder_analyst_hash', 'analyst')
 ON CONFLICT (email) DO NOTHING;
 
 
--- ---------------------------------------------------------------------------
 -- 4. Verification queries
---    Uncomment and run these to confirm the seed loaded correctly.
--- ---------------------------------------------------------------------------
-
 -- SELECT * FROM file_type_registry ORDER BY type_code;
 -- SELECT
 --     b.file_type,
@@ -100,7 +73,3 @@ ON CONFLICT (email) DO NOTHING;
 -- FROM baselines b
 -- ORDER BY b.mean_entropy DESC;
 -- SELECT * FROM users;
-
--- =============================================================================
--- End of seed_data.sql
--- =============================================================================

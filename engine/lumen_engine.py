@@ -1,3 +1,4 @@
+#this file calculates the entropy per chunk 
 import math
 import os
 from typing import Dict, List

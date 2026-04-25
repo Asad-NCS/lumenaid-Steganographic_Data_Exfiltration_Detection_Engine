@@ -1,3 +1,4 @@
+#basically the API that connects everything
 """
 LumenAid — Steganographic Data Exfiltration Detection Engine
 api/main.py
