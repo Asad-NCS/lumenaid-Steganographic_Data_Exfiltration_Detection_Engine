@@ -126,22 +126,36 @@ class ScanPipeline:
             "JPEG": "JPG",
         }
         mapped_type = type_mapping.get(ext_upper, ext_upper)
-        supported_types = {"TEXT", "PDF", "JPG", "PNG", "DOCX", "XLSX", "ZIP", "MP3", "EXE", "BIN"}
-        file_type = mapped_type if mapped_type in supported_types else "BIN"
+        supported_types = {"TEXT", "JPG", "PDF"}
+        
+        if mapped_type not in supported_types:
+            return ScanResult(
+                file_id=-1,
+                total_segments=0,
+                status="error",
+                error=f"Unsupported file type: {ext}. Only TXT, JPG, and PDF are allowed.",
+            )
+        file_type = mapped_type
+
+        import time
+        scan_start_time = time.time()
 
         try:
             #--- step 1: entropy analysis via lumenengine ---
             engine = LumenEngine(file_path)
             segments = engine.analyze()
+            analysis_duration_ms = int((time.time() - scan_start_time) * 1000)
 
             #--- step 2: hybrid persistence (mongo chunks + pg files/segments) ---
             # NOTE: this transparently fires the postgres triggers which will
             # generate alerts and update the file status automatically!
+            db_start_time = time.time()
             file_id = self.db.persist(
                 user_id=user_id,
                 file_type=file_type,
                 segments=segments,
             )
+            db_duration_ms = int((time.time() - db_start_time) * 1000)
 
             # LEGACY PYTHON ALERT CLASSIFICATION (Commented out)
 
@@ -177,6 +191,39 @@ class ScanPipeline:
                 if row:
                     final_status = row[0]
                     flagged_count = int(row[1] or 0)
+            
+            #--- step 4: extract threat payloads and send telemetry to MongoDB ---
+            if flagged_count > 0:
+                with pg_conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT s.segment_index 
+                        FROM alerts a 
+                        JOIN segments s ON a.segment_id = s.segment_id 
+                        WHERE a.file_id = %s
+                        """, (file_id,)
+                    )
+                    alert_rows = cur.fetchall()
+                    for alert_row in alert_rows:
+                        seg_idx = alert_row[0]
+                        # Find the raw bytes from segments array
+                        for seg in segments:
+                            if seg["segment_index"] == seg_idx:
+                                payload_hex = seg["raw_bytes"].hex()
+                                self.db.store_threat_payload(file_id, seg_idx, payload_hex)
+                                break
+            
+            total_duration_ms = int((time.time() - scan_start_time) * 1000)
+            self.db.insert_scan_telemetry({
+                "file_id": file_id,
+                "file_type": file_type,
+                "file_size_bytes": os.path.getsize(file_path),
+                "total_segments": len(segments),
+                "analysis_duration_ms": analysis_duration_ms,
+                "db_persist_duration_ms": db_duration_ms,
+                "total_duration_ms": total_duration_ms,
+                "flagged": (flagged_count > 0)
+            })
             
             return ScanResult(
                 file_id=file_id,

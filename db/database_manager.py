@@ -206,6 +206,30 @@ class DatabaseManager:
             {"$set": {"file_id": file_id}},
         )
 
+    def insert_scan_telemetry(self, telemetry_data: Dict):
+        #dumps massive telemetry json into mongo for performance analysis
+        mongo_db = self._connect_mongo()
+        telemetry_col = mongo_db["scan_telemetry"]
+        
+        if "timestamp" not in telemetry_data:
+            from datetime import datetime, timezone
+            telemetry_data["timestamp"] = datetime.now(timezone.utc)
+            
+        telemetry_col.insert_one(telemetry_data)
+
+    def store_threat_payload(self, file_id: int, segment_index: int, payload_hex: str):
+        #stores the extracted threat payload in mongo sandbox
+        mongo_db = self._connect_mongo()
+        payloads_col = mongo_db["threat_payloads"]
+        
+        from datetime import datetime, timezone
+        payloads_col.insert_one({
+            "file_id": file_id,
+            "segment_index": segment_index,
+            "payload_hex": payload_hex,
+            "extracted_at": datetime.now(timezone.utc)
+        })
+
     #--- context manager support ---------------------------------------------
 
     def __enter__(self):
