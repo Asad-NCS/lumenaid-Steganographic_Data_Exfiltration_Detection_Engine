@@ -46,7 +46,7 @@ from engine.scan_pipeline import ScanPipeline
 # Configuration — read from environment with sane defaults for local dev
 # ---------------------------------------------------------------------------
 
-PG_DSN        = os.getenv("LUMENAID_PG_DSN",       "host=localhost dbname=lumenaid user=postgres password=Azaan2004")
+PG_DSN        = os.getenv("LUMENAID_PG_DSN",       "host=localhost dbname=lumenaid user=postgres password=3568")
 MONGO_URI     = os.getenv("LUMENAID_MONGO_URI",    "mongodb://localhost:27017")
 MONGO_DB      = os.getenv("LUMENAID_MONGO_DB",     "lumenaid")
 DEFAULT_USER  = int(os.getenv("LUMENAID_DEFAULT_USER", "1"))

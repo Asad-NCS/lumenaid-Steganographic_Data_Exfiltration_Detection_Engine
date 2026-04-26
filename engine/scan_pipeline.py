@@ -28,93 +28,75 @@ class ScanPipeline:
     #orchestrates_the full lumenaid scan workflow:
     #  1. lumenengine   — read file, chunk it, compute entropy per segment
     #  2. databasemanager — persist chunks to mongo + file/segments to postgres
-    #  3. baseline_lookup — fetch file-type thresholds from postgres baselines table
-    #  4. alert_generation — compare each segment entropy against the baseline
-    #  5. status_update  — mark the file record as 'clean' or 'flagged' in postgres
+    #  3. alert_generation — handled purely by postgres triggers during insert
+    #  4. result_fetch  — fetch the final status and alert count from postgres
 
     def __init__(self, db_manager: DatabaseManager):
         self.db = db_manager
 
-    #--- baseline lookup ------------------------------------------------------
 
-    def _fetch_baseline(self, pg_conn, file_type: str) -> Optional[Dict]:
-        #queries_the baselines table for the given file_type.
-        #returns dict with mean_entropy + threshold_sigma, or None if not found.
-        with pg_conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT mean_entropy, threshold_sigma
-                FROM   baselines
-                WHERE  file_type = %s
-                LIMIT  1
-                """,
-                (file_type,),
-            )
-            row = cur.fetchone()
+    # LEGACY PYTHON-DRIVEN ALERT LOGIC 
+    # (Commented out in favor of database-centric PostgreSQL Triggers)
+    # Kept here just in case it is needed in the future.
 
-        if row is None:
-            return None
+    # 
+    # def _fetch_baseline(self, pg_conn, file_type: str) -> Optional[Dict]:
+    #     with pg_conn.cursor() as cur:
+    #         cur.execute(
+    #             """
+    #             SELECT mean_entropy, threshold_sigma
+    #             FROM   baselines
+    #             WHERE  file_type = %s
+    #             LIMIT  1
+    #             """,
+    #             (file_type,),
+    #         )
+    #         row = cur.fetchone()
+    #     if row is None:
+    #         return None
+    #     return {"mean_entropy": float(row[0]), "threshold_sigma": float(row[1])}
+    # 
+    # def _classify_severity(
+    #     self, entropy: float, mean: float, sigma: float
+    # ) -> Optional[str]:
+    #     deviation = entropy - mean
+    #     if deviation > SIGMA_HIGH * sigma:
+    #         return "HIGH"
+    #     if deviation > SIGMA_MEDIUM * sigma:
+    #         return "MEDIUM"
+    #     if deviation > SIGMA_LOW * sigma:
+    #         return "LOW"
+    #     return None
+    # 
+    # def _write_alerts(self, pg_conn, file_id: int, alerts: List[Dict]):
+    #     if not alerts:
+    #         return
+    #     import psycopg2.extras
+    #     rows = [(file_id, a["severity"], a["entropy_score"]) for a in alerts]
+    #     with pg_conn.cursor() as cur:
+    #         psycopg2.extras.execute_values(
+    #             cur,
+    #             """
+    #             INSERT INTO alerts (file_id, severity, entropy_score)
+    #             VALUES %s
+    #             """,
+    #             rows,
+    #         )
+    #     pg_conn.commit()
+    # 
+    # def _update_file_status(self, pg_conn, file_id: int, status: str):
+    #     with pg_conn.cursor() as cur:
+    #         cur.execute(
+    #             """
+    #             UPDATE files
+    #             SET    status = %s
+    #             WHERE  file_id = %s
+    #             """,
+    #             (status, file_id),
+    #         )
+    #     pg_conn.commit()
 
-        return {"mean_entropy": float(row[0]), "threshold_sigma": float(row[1])}
-
-    #--- alert classification -------------------------------------------------
-
-    def _classify_severity(
-        self, entropy: float, mean: float, sigma: float
-    ) -> Optional[str]:
-        #returns_severity level if the entropy exceeds a threshold, else None.
-        deviation = entropy - mean
-        if deviation > SIGMA_HIGH * sigma:
-            return "HIGH"
-        if deviation > SIGMA_MEDIUM * sigma:
-            return "MEDIUM"
-        if deviation > SIGMA_LOW * sigma:
-            return "LOW"
-        return None  #within normal range — not suspicious
-
-    #--- alert persistence ----------------------------------------------------
-
-    def _write_alerts(self, pg_conn, file_id: int, alerts: List[Dict]):
-        #inserts_all raised alerts into the postgres alerts table in one batch.
-        #each_alert carries: file_id, severity (HIGH/MEDIUM/LOW), entropy_score.
-        if not alerts:
-            return
-
-        import psycopg2.extras
-
-        rows = [
-            (file_id, a["severity"], a["entropy_score"])
-            for a in alerts
-        ]
-
-        with pg_conn.cursor() as cur:
-            psycopg2.extras.execute_values(
-                cur,
-                """
-                INSERT INTO alerts (file_id, severity, entropy_score)
-                VALUES %s
-                """,
-                rows,
-            )
-        pg_conn.commit()
-
-    #--- file status update ---------------------------------------------------
-
-    def _update_file_status(self, pg_conn, file_id: int, status: str):
-        #updates_the files.status column after scanning is complete.
-        #valid_values: 'pending' (set on insert) | 'clean' | 'flagged'
-        with pg_conn.cursor() as cur:
-            cur.execute(
-                """
-                UPDATE files
-                SET    status = %s
-                WHERE  file_id = %s
-                """,
-                (status, file_id),
-            )
-        pg_conn.commit()
-
-    #--- public api -----------------------------------------------------------
+    #public api
 
     def run(self, file_path: str, user_id: int) -> ScanResult:
         #main_entry point for a single file scan.
@@ -153,53 +135,54 @@ class ScanPipeline:
             segments = engine.analyze()
 
             #--- step 2: hybrid persistence (mongo chunks + pg files/segments) ---
+            # NOTE: this transparently fires the postgres triggers which will
+            # generate alerts and update the file status automatically!
             file_id = self.db.persist(
                 user_id=user_id,
                 file_type=file_type,
                 segments=segments,
             )
 
-            #--- step 3: baseline lookup from postgres ---
+            # LEGACY PYTHON ALERT CLASSIFICATION (Commented out)
+
+            # pg_conn = self.db._connect_postgres()
+            # baseline = self._fetch_baseline(pg_conn, file_type)
+            # alerts_raised: List[Dict] = []
+            # if baseline is None:
+            #     print(f"[lumenaid] warning: no baseline found for type '{file_type}'. skipping alert classification.")
+            # else:
+            #     mean  = baseline["mean_entropy"]
+            #     sigma = baseline["threshold_sigma"]
+            #     for seg in segments:
+            #         severity = self._classify_severity(seg["entropy_score"], mean, sigma)
+            #         if severity is not None:
+            #             alerts_raised.append({"segment_index": seg["segment_index"], "entropy_score": seg["entropy_score"], "severity": severity})
+            #     self._write_alerts(pg_conn, file_id, alerts_raised)
+            # final_status = "FLAGGED" if alerts_raised else "CLEAN"
+            # self._update_file_status(pg_conn, file_id, final_status)
+            # =========================================================================
+
+            #--- step 3: fetch the final status and alerts generated by DB triggers ---
             pg_conn = self.db._connect_postgres()
-            baseline = self._fetch_baseline(pg_conn, file_type)
-
-            alerts_raised: List[Dict] = []
-
-            if baseline is None:
-                #no_baseline exists for this file type yet — can't classify,
-                #mark as clean but surface the gap in the result.
-                print(
-                    f"[lumenaid] warning: no baseline found for type '{file_type}'. "
-                    f"skipping alert classification."
+            
+            final_status = "PENDING"
+            flagged_count = 0
+            
+            with pg_conn.cursor() as cur:
+                cur.execute(
+                    "SELECT status, alert_count FROM get_file_summary(%s)",
+                    (file_id,)
                 )
-            else:
-                mean  = baseline["mean_entropy"]
-                sigma = baseline["threshold_sigma"]
-
-                #--- step 4: classify each segment against the baseline ---
-                for seg in segments:
-                    severity = self._classify_severity(
-                        seg["entropy_score"], mean, sigma
-                    )
-                    if severity is not None:
-                        alerts_raised.append({
-                            "segment_index": seg["segment_index"],
-                            "entropy_score": seg["entropy_score"],
-                            "severity":      severity,
-                        })
-
-                #write_all raised alerts to postgres alerts table
-                self._write_alerts(pg_conn, file_id, alerts_raised)
-
-            #--- step 5: update file status ---
-            final_status = "FLAGGED" if alerts_raised else "CLEAN"
-            self._update_file_status(pg_conn, file_id, final_status)
-
+                row = cur.fetchone()
+                if row:
+                    final_status = row[0]
+                    flagged_count = int(row[1] or 0)
+            
             return ScanResult(
                 file_id=file_id,
                 total_segments=len(segments),
-                alerts_raised=alerts_raised,
-                flagged_count=len(alerts_raised),
+                alerts_raised=[], # api/main.py does not use this field in /upload response
+                flagged_count=flagged_count,
                 status=final_status,
             )
 
@@ -214,23 +197,5 @@ class ScanPipeline:
 
 
 if __name__ == "__main__":
-    #--- usage_example (requires live postgres + mongo) ---
-    #
-    #  pg_dsn       = "host=localhost dbname=lumenaid user=postgres password=secret"
-    #  mongo_uri    = "mongodb://localhost:27017"
-    #  mongo_db     = "lumenaid"
-    #
-    #  with DatabaseManager(pg_dsn, mongo_uri, mongo_db) as db:
-    #      pipeline = ScanPipeline(db)
-    #      result   = pipeline.run("/path/to/suspicious_image.png", user_id=1)
-    #
-    #      print(f"file_id       : {result.file_id}")
-    #      print(f"total segments: {result.total_segments}")
-    #      print(f"status        : {result.status}")
-    #      print(f"alerts raised : {result.flagged_count}")
-    #      for alert in result.alerts_raised:
-    #          print(f"  segment {alert['segment_index']:>3} | "
-    #                f"entropy {alert['entropy_score']:.4f} | {alert['severity']}")
-
     print("[lumenaid] scan_pipeline.py — import and instantiate ScanPipeline to use.")
     print("see commented usage block above for a wiring example.")

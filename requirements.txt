@@ -7,7 +7,7 @@ uvicorn[standard]==0.29.0
 python-multipart==0.0.9      # required for FastAPI file uploads
 
 # --- Database layer ---
-psycopg2-binary==2.9.9       # PostgreSQL driver
+psycopg2-binary>=2.9.12       # PostgreSQL driver
 pymongo==4.7.1                # MongoDB driver
 
 # --- Engine layer (already in engine/) ---
