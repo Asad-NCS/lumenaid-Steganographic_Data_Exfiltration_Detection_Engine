@@ -221,3 +221,34 @@ CREATE TRIGGER entropy_anomaly_trigger
     REFERENCING NEW TABLE AS inserted_rows
     FOR EACH STATEMENT
     EXECUTE FUNCTION fn_detect_entropy_anomalies();
+
+
+-- Enable RLS to ensure analysts can only see their own files.
+-- Admins bypass this to see everything.
+ALTER TABLE files ENABLE ROW LEVEL SECURITY;
+ALTER TABLE alerts ENABLE ROW LEVEL SECURITY;
+
+-- Policy for 'analyst_role': can only SELECT files where user_id matches app.current_user_id
+CREATE POLICY analyst_files_policy ON files
+    FOR SELECT
+    TO analyst_role
+    USING (user_id = current_setting('app.current_user_id', true)::integer);
+
+-- Policy for 'admin_role': can SELECT all files
+CREATE POLICY admin_files_policy ON files
+    FOR SELECT
+    TO admin_role
+    USING (true);
+
+-- Cascading RLS for alerts (Analysts only see alerts for their files)
+CREATE POLICY analyst_alerts_policy ON alerts
+    FOR SELECT
+    TO analyst_role
+    USING (file_id IN (
+        SELECT file_id FROM files WHERE user_id = current_setting('app.current_user_id', true)::integer
+    ));
+
+CREATE POLICY admin_alerts_policy ON alerts
+    FOR SELECT
+    TO admin_role
+    USING (true);
