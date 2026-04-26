@@ -5,20 +5,22 @@ SELECT
     s.file_id,
     s.segment_index,
     s.entropy_score,
+    COALESCE(s.chi_square_score, 0)                              AS chi_square_score,
     AVG(s.entropy_score) OVER (
         PARTITION BY s.file_id
         ORDER BY s.segment_index
         ROWS BETWEEN 2 PRECEDING AND 2 FOLLOWING
-    )                                                    AS smoothed_entropy,
+    )                                                            AS smoothed_entropy,
     b.mean_entropy,
-    (b.mean_entropy + b.threshold_sigma)                 AS anomaly_threshold,
+    (b.mean_entropy + b.threshold_sigma)                         AS anomaly_threshold,
     ROUND(
         AVG(s.entropy_score) OVER (
             PARTITION BY s.file_id
             ORDER BY s.segment_index
             ROWS BETWEEN 2 PRECEDING AND 2 FOLLOWING
         ) - b.mean_entropy,
-    4)                                                   AS deviation,
+        4
+    )                                                            AS deviation,
     CASE
         WHEN AVG(s.entropy_score) OVER (
             PARTITION BY s.file_id
@@ -27,7 +29,28 @@ SELECT
         ) > (b.mean_entropy + b.threshold_sigma)
         THEN TRUE
         ELSE FALSE
-    END                                                  AS is_anomalous
+    END                                                          AS is_anomalous,
+    CASE
+        WHEN s.entropy_score > (b.mean_entropy + (1.5 * b.threshold_sigma)) THEN 3
+        ELSE 0
+    END                                                          AS entropy_signal_score,
+    CASE
+        WHEN COALESCE(s.chi_square_score, 0) > 50.0 THEN 3
+        ELSE 0
+    END                                                          AS chi_signal_score,
+    (
+        CASE
+            WHEN s.entropy_score > (b.mean_entropy + (1.5 * b.threshold_sigma)) THEN 3
+            ELSE 0
+        END
+        +
+        CASE
+            WHEN COALESCE(s.chi_square_score, 0) > 50.0 THEN 3
+            ELSE 0
+        END
+    )                                                    AS segment_score_contribution,
+    COALESCE(f.threat_score, 0)                          AS file_threat_score,
+    f.risk_level
 FROM segments  s
 JOIN files     f ON f.file_id   = s.file_id
 JOIN baselines b ON b.file_type = f.file_type;

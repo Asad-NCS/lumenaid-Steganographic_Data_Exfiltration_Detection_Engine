@@ -79,16 +79,15 @@ class DatabaseManager:
 
     #postgres layer
 
-    def _insert_file_record(self, cursor, user_id: int, file_type: str) -> int:
+    def _insert_file_record(self, cursor, user_id: int, file_type: str, file_size: int) -> int:
         #inserts_a row into the files table and returns the generated file_id.
-        #status_defaults to 'pending' — the scan pipeline will update it later.
         cursor.execute(
             """
-            INSERT INTO files (user_id, file_type, status)
-            VALUES (%s, %s, %s)
+            INSERT INTO files (user_id, file_type, file_size, status)
+            VALUES (%s, %s, %s, %s)
             RETURNING file_id
             """,
-            (user_id, file_type, "PENDING"),
+            (user_id, file_type, file_size, "PENDING"),
         )
         row = cursor.fetchone()
         return row[0]
@@ -101,14 +100,13 @@ class DatabaseManager:
         mongo_ids: List[str],
     ):
         #performs_a batch insert into the segments table.
-        #raw_chunk_ref receives only the mongo objectid hex string (varchar) — never bytea.
-        #uses_psycopg2 execute_values for efficient multi-row insert.
         rows = [
             (
                 file_id,
                 seg["segment_index"],
                 seg["entropy_score"],
-                mongo_ids[idx],          #24-char hex string — the cross-db link
+                seg["chi_square_score"], # NEW SIGNAL
+                mongo_ids[idx],          
             )
             for idx, seg in enumerate(segments)
         ]
@@ -117,7 +115,7 @@ class DatabaseManager:
             cursor,
             """
             INSERT INTO segments
-                (file_id, segment_index, entropy_score, raw_chunk_ref)
+                (file_id, segment_index, entropy_score, chi_square_score, raw_chunk_ref)
             VALUES %s
             """,
             rows,
@@ -129,6 +127,7 @@ class DatabaseManager:
         self,
         user_id: int,
         file_type: str,
+        file_size: int,
         segments: List[Dict],
     ) -> int:
         #main_entry point. orchestrates the full hybrid persistence workflow:
@@ -164,7 +163,7 @@ class DatabaseManager:
 
             with pg_conn.cursor() as cur:
                 #step_3: insert file record and capture the real file_id
-                file_id = self._insert_file_record(cur, user_id, file_type)
+                file_id = self._insert_file_record(cur, user_id, file_type, file_size)
 
                 #back-patch_the mongo docs with the real file_id (best-effort update)
                 self._backpatch_mongo_file_id(mongo_ids, file_id)

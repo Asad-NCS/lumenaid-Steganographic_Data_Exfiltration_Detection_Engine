@@ -10,48 +10,39 @@ END;
 $$;
 
 
--- Procedure: sp_recalculate_baselines
--- Purpose: Dynamically recalculate file type baselines using a Cursor.
--- Memory-safe processing for millions of segments.
 CREATE OR REPLACE PROCEDURE sp_recalculate_baselines(p_file_type VARCHAR)
 LANGUAGE plpgsql
 AS $$
 DECLARE
-    -- Cursor to iterate over chunks without loading all into RAM
-    seg_cursor CURSOR FOR 
-        SELECT s.entropy_score 
-        FROM segments s
-        JOIN files f ON s.file_id = f.file_id
-        WHERE f.file_type = p_file_type AND f.status = 'CLEAN';
-    
-    v_entropy NUMERIC;
-    v_total_entropy NUMERIC := 0;
-    v_count INTEGER := 0;
     v_new_mean NUMERIC;
+    v_new_sigma NUMERIC;
+    v_avg_size BIGINT;
+    v_count INTEGER;
 BEGIN
-    OPEN seg_cursor;
-    
-    LOOP
-        FETCH seg_cursor INTO v_entropy;
-        EXIT WHEN NOT FOUND;
-        
-        v_total_entropy := v_total_entropy + v_entropy;
-        v_count := v_count + 1;
-    END LOOP;
-    
-    CLOSE seg_cursor;
-    
+    -- 1. Entropy Stats
+    SELECT AVG(s.entropy_score), STDDEV(s.entropy_score), COUNT(*)
+    INTO v_new_mean, v_new_sigma, v_count
+    FROM segments s
+    JOIN files f ON s.file_id = f.file_id
+    WHERE f.file_type = p_file_type AND f.status = 'CLEAN';
+
+    -- 2. File Size Stats
+    SELECT AVG(file_size)
+    INTO v_avg_size
+    FROM files
+    WHERE file_type = p_file_type AND status = 'CLEAN';
+
     IF v_count > 0 THEN
-        v_new_mean := v_total_entropy / v_count;
-        
         UPDATE baselines 
         SET mean_entropy = v_new_mean,
+            threshold_sigma = COALESCE(v_new_sigma, 0.2),
+            avg_file_size = COALESCE(v_avg_size, 0),
             updated_at = NOW()
         WHERE file_type = p_file_type;
         
-        RAISE NOTICE 'Adaptive Baseline Triggered: Updated % mean to %', p_file_type, v_new_mean;
+        RAISE NOTICE 'Multi-Signal Baseline Updated for %', p_file_type;
     ELSE
-        RAISE NOTICE 'No clean files found for %', p_file_type;
+        RAISE NOTICE 'No clean data for %', p_file_type;
     END IF;
 END;
 $$;
