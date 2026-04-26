@@ -43,9 +43,7 @@ from db.database_manager import DatabaseManager
 from engine.scan_pipeline import ScanPipeline
 
 
-# ---------------------------------------------------------------------------
 # Configuration — read from environment with sane defaults for local dev
-# ---------------------------------------------------------------------------
 
 PG_DSN        = os.getenv("LUMENAID_PG_DSN",       "host=localhost dbname=lumenaid user=postgres password=3568")
 MONGO_URI     = os.getenv("LUMENAID_MONGO_URI",    "mongodb://localhost:27017")
@@ -57,9 +55,7 @@ UPLOAD_DIR    = os.getenv("LUMENAID_UPLOAD_DIR",   tempfile.gettempdir())
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
-# ---------------------------------------------------------------------------
-# Application-level shared state
-# ---------------------------------------------------------------------------
+# Application-level shared state 
 
 _db_manager: Optional[DatabaseManager] = None
 
@@ -147,9 +143,8 @@ def get_pg_conn():
     return get_db()._connect_postgres()
 
 
-# ---------------------------------------------------------------------------
-# FastAPI application
-# ---------------------------------------------------------------------------
+ 
+# FastAPI application 
 
 app = FastAPI(
     title="LumenAid — Detection API",
@@ -168,9 +163,9 @@ app.add_middleware(
 )
 
 
-# ---------------------------------------------------------------------------
+# 
 # Pydantic response models
-# ---------------------------------------------------------------------------
+# 
 
 class LoginRequest(BaseModel):
     username: str
@@ -227,9 +222,9 @@ class FileAnalysisResponse(BaseModel):
     alerts:    List[AlertRecord]
 
 
-# ---------------------------------------------------------------------------
+# 
 # POST /login
-# ---------------------------------------------------------------------------
+# 
 
 @app.post(
     "/login",
@@ -260,9 +255,8 @@ def login(req: LoginRequest):
         token="demo-token-123"
     )
 
-# ---------------------------------------------------------------------------
-# GET /chunks/{chunk_id}/hex
-# ---------------------------------------------------------------------------
+ 
+# GET /chunks/{chunk_id}/hex 
 
 @app.get(
     "/chunks/{chunk_id}/hex",
@@ -353,9 +347,9 @@ def get_telemetry(limit: int = 15):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# ---------------------------------------------------------------------------
+ 
 # POST /upload
-# ---------------------------------------------------------------------------
+ 
 
 @app.post(
     "/upload",
@@ -406,9 +400,9 @@ async def upload_file(file: UploadFile = File(...)):
     )
 
 
-# ---------------------------------------------------------------------------
+ 
 # GET /files
-# ---------------------------------------------------------------------------
+
 
 @app.get(
     "/files",
@@ -448,10 +442,9 @@ def list_files():
         for r in rows
     ]
 
-
-# ---------------------------------------------------------------------------
+ 
 # GET /files/{file_id}/analysis
-# ---------------------------------------------------------------------------
+
 
 @app.get(
     "/files/{file_id}/analysis",
@@ -571,9 +564,8 @@ def get_file_analysis(file_id: int):
     )
 
 
-# ---------------------------------------------------------------------------
-# GET /health  — lightweight liveness probe
-# ---------------------------------------------------------------------------
+
+# GET /health  — lightweight liveness probe 
 
 @app.get("/health", tags=["ops"])
 def health():

@@ -25,7 +25,7 @@ class DatabaseManager:
         self._mongo_client = None
         self._mongo_db = None
 
-    #--- connection helpers ---------------------------------------------------
+    #connection helpers
 
     def _connect_postgres(self):
         #opens_a postgres connection if one isn't already open.
@@ -51,7 +51,7 @@ class DatabaseManager:
             self._pg_conn.close()
             self._pg_conn = None
 
-    #--- mongodb layer --------------------------------------------------------
+    #mongodb layer
 
     def _insert_chunks_to_mongo(
         self, file_id: int, segments: List[Dict]
@@ -77,7 +77,7 @@ class DatabaseManager:
 
         return mongo_ids
 
-    #--- postgres layer -------------------------------------------------------
+    #postgres layer
 
     def _insert_file_record(self, cursor, user_id: int, file_type: str) -> int:
         #inserts_a row into the files table and returns the generated file_id.
@@ -123,7 +123,7 @@ class DatabaseManager:
             rows,
         )
 
-    #--- public api -----------------------------------------------------------
+    #public api
 
     def persist(
         self,
@@ -252,7 +252,7 @@ class DatabaseManager:
             r["_id"] = str(r["_id"]) #convert ObjectId to string
         return results
 
-    #--- context manager support ---------------------------------------------
+    #context manager support
 
     def __enter__(self):
         return self
