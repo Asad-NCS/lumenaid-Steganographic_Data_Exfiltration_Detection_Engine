@@ -34,6 +34,7 @@ from typing import List, Optional
 
 import psycopg2
 import psycopg2.extras
+import bcrypt
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -171,6 +172,24 @@ app.add_middleware(
 # Pydantic response models
 # ---------------------------------------------------------------------------
 
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+class LoginResponse(BaseModel):
+    user_id: int
+    username: str
+    role: str
+    token: str
+
+class HexDumpResponse(BaseModel):
+    mongo_id: str
+    hex_dump: str
+    strings: List[str]
+    entropy: float
+    verdict: str
+    is_suspicious: bool
+
 class UploadResponse(BaseModel):
     file_id:        int
     status:         str          # "clean" | "flagged" | "error"
@@ -207,6 +226,132 @@ class FileAnalysisResponse(BaseModel):
     segments:  List[SegmentRecord]
     alerts:    List[AlertRecord]
 
+
+# ---------------------------------------------------------------------------
+# POST /login
+# ---------------------------------------------------------------------------
+
+@app.post(
+    "/login",
+    response_model=LoginResponse,
+    summary="Authenticate user and return role",
+    tags=["auth"],
+)
+def login(req: LoginRequest):
+    conn = get_pg_conn()
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute("SELECT user_id, username, password_hash, role FROM users WHERE username = %s", (req.username,))
+        user = cur.fetchone()
+        
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+        
+    # Check bcrypt hash
+    try:
+        if not bcrypt.checkpw(req.password.encode('utf-8'), user["password_hash"].encode('utf-8')):
+            raise HTTPException(status_code=401, detail="Invalid username or password")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid password format")
+        
+    return LoginResponse(
+        user_id=user["user_id"],
+        username=user["username"],
+        role=user["role"],
+        token="demo-token-123"
+    )
+
+# ---------------------------------------------------------------------------
+# GET /chunks/{chunk_id}/hex
+# ---------------------------------------------------------------------------
+
+@app.get(
+    "/chunks/{chunk_id}/hex",
+    response_model=HexDumpResponse,
+    summary="Get human and raw analysis of a segment",
+    tags=["analysis"],
+)
+def get_chunk_hex(chunk_id: str):
+    db = get_db()
+    try:
+        raw_bytes = db.get_chunk_bytes(chunk_id)
+        if not raw_bytes:
+            raise HTTPException(status_code=404, detail="Chunk not found")
+            
+        # 1. Generate Hex Dump
+        hex_lines = []
+        for i in range(0, len(raw_bytes), 16):
+            chunk = raw_bytes[i:i+16]
+            hex_str = ' '.join(f'{b:02x}' for b in chunk)
+            ascii_str = ''.join(chr(b) if 32 <= b <= 126 else '.' for b in chunk)
+            hex_lines.append(f"{i:08x}  {hex_str:<47}  |{ascii_str}|")
+            
+        # 2. Extract Human Readable Strings (min length 4)
+        import re
+        # Find sequences of 4 or more printable ASCII characters
+        found_strings = re.findall(b"[\\x20-\\x7E]{4,}", raw_bytes)
+        decoded_strings = [s.decode('ascii', errors='ignore') for s in found_strings]
+        
+        # 3. Smart Heuristic Verdict (Context-Aware)
+        # Fetch the baseline for this specific segment to avoid false positives
+        conn = get_pg_conn()
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("""
+                SELECT b.mean_entropy, b.threshold_sigma, f.file_type
+                FROM segments s
+                JOIN files f ON s.file_id = f.file_id
+                JOIN baselines b ON f.file_type = b.file_type
+                WHERE s.raw_chunk_ref = %s
+                LIMIT 1
+            """, (chunk_id,))
+            context = cur.fetchone()
+
+        import math
+        freq = [0] * 256
+        for b in raw_bytes: freq[b] += 1
+        entropy = 0.0
+        for c in freq:
+            if c > 0:
+                p = c / len(raw_bytes)
+                entropy -= p * math.log2(p)
+        
+        # Compare against real baseline
+        threshold = 7.5 # fallback
+        file_type = "UNKNOWN"
+        if context:
+            threshold = float(context["mean_entropy"]) + float(context["threshold_sigma"])
+            file_type = context["file_type"]
+
+        is_suspicious = entropy > threshold
+        
+        if is_suspicious:
+            verdict = f"Anomaly detected for {file_type}. Entropy ({round(entropy,2)}) exceeds threshold ({round(threshold,2)}). Likely hidden payload."
+        elif entropy > 7.0:
+            verdict = f"Normal {file_type} compression. High entropy is expected for this file format."
+        else:
+            verdict = f"Clean {file_type} segment. Entropy is within normal operational parameters."
+
+        return HexDumpResponse(
+            mongo_id=chunk_id,
+            hex_dump='\n'.join(hex_lines),
+            strings=decoded_strings[:20], 
+            entropy=round(entropy, 4),
+            verdict=verdict,
+            is_suspicious=is_suspicious
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get(
+    "/telemetry",
+    summary="Get system scan logs from MongoDB (Admin only)",
+    tags=["admin"],
+)
+def get_telemetry(limit: int = 15):
+    db = get_db()
+    try:
+        return db.get_telemetry(limit)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ---------------------------------------------------------------------------
 # POST /upload

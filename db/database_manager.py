@@ -230,6 +230,28 @@ class DatabaseManager:
             "extracted_at": datetime.now(timezone.utc)
         })
 
+    def get_chunk_bytes(self, mongo_id: str) -> bytes:
+        #fetches the raw binary chunk from mongodb by its ObjectId hex string.
+        from bson import ObjectId
+        mongo_db = self._connect_mongo()
+        chunks_col = mongo_db["chunks"]
+        
+        doc = chunks_col.find_one({"_id": ObjectId(mongo_id)})
+        if not doc or "raw_bytes" not in doc:
+            return b""
+        return doc["raw_bytes"]
+
+    def get_telemetry(self, limit: int = 10) -> List[Dict]:
+        #fetches recent scan telemetry from mongodb for admin audit logs.
+        mongo_db = self._connect_mongo()
+        telemetry_col = mongo_db["scan_telemetry"]
+        
+        #fetch latest entries
+        results = list(telemetry_col.find().sort("_id", -1).limit(limit))
+        for r in results:
+            r["_id"] = str(r["_id"]) #convert ObjectId to string
+        return results
+
     #--- context manager support ---------------------------------------------
 
     def __enter__(self):

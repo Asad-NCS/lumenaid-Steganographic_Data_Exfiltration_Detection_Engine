@@ -1,391 +1,476 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-
+import "./index.css"
 const API = "http://localhost:8000";
 
-// ---------------------------------------------------------------------------
-// Colour helpers — maps entropy → CSS rgb() string
-//
-// Three-stop gradient anchored to the file-type baseline:
-//   0.0              → dark green  hsl(142, 70%, 18%)
-//   mean             → yellow      hsl(48,  96%, 53%)
-//   mean + sigma+    → bright red  hsl(0,   90%, 50%)
-//
-// Values between anchors are linearly interpolated in HSL space.
-// ---------------------------------------------------------------------------
+const css = `
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap');
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #060910; color: #c8d6e8; font-family: 'DM Sans', sans-serif; }
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: #0d1117; }
+  ::-webkit-scrollbar-thumb { background: #1e2d40; border-radius: 2px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes scan { 0% { transform: translateY(-100%); } 100% { transform: translateY(400%); } }
+  .fade-up { animation: fadeUp 0.35s ease forwards; }
+  .row-hover:hover { background: rgba(245,158,11,0.04) !important; }
+  .hex-dump { font-family: 'Space Mono', monospace; font-size: 11px; color: #6b8099; line-height: 1.4; white-space: pre; }
+  .hex-dump b { color: #f59e0b; font-weight: normal; }
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 10000; backdrop-filter: blur(4px); }
+  .modal-content { background: #0b1019; border: 1px solid #141f2e; border-radius: 12px; width: 800px; max-width: 95vw; max-height: 85vh; height: 600px; display: flex; flex-direction: column; animation: fadeUp 0.3s ease; overflow: hidden; }
+  .login-input { width: 100%; background: #060910; border: 1px solid #141f2e; padding: 12px 16px; color: #c8d6e8; borderRadius: 8; outline: none; transition: border-color 0.2s; }
+  .login-input:focus { border-color: #f59e0b; }
+`;
+
 function entropyToColor(entropy, mean, sigma) {
   const threshold = mean + sigma;
-
   const lerp = (a, b, t) => a + (b - a) * Math.max(0, Math.min(1, t));
-
   let h, s, l;
-
   if (entropy <= mean) {
-    // dark-green → yellow
     const t = mean === 0 ? 0 : entropy / mean;
-    h = lerp(142, 48, t);
-    s = lerp(70, 96, t);
-    l = lerp(18, 53, t);
+    h = lerp(158, 43, t); s = lerp(64, 95, t); l = lerp(22, 55, t);
   } else {
-    // yellow → bright-red
     const t = threshold === mean ? 1 : (entropy - mean) / (threshold - mean);
-    h = lerp(48, 0, t);
-    s = lerp(96, 90, t);
-    l = lerp(53, 50, t);
+    h = lerp(43, 0, t); s = lerp(95, 88, t); l = lerp(55, 52, t);
   }
-
-  return `hsl(${h.toFixed(1)}, ${s.toFixed(1)}%, ${l.toFixed(1)}%)`;
+  return `hsl(${h.toFixed(1)},${s.toFixed(1)}%,${l.toFixed(1)}%)`;
 }
 
-// ---------------------------------------------------------------------------
-// Severity badge
-// ---------------------------------------------------------------------------
-function SeverityBadge({ severity }) {
-  const palette = {
-    CRITICAL: { bg: "#ff1744", text: "#fff" },
-    HIGH: { bg: "#ff5722", text: "#fff" },
-    MEDIUM: { bg: "#ff9800", text: "#111" },
-    LOW: { bg: "#ffc107", text: "#111" },
-  };
-  const style = palette[severity] || { bg: "#555", text: "#fff" };
+function Mono({ children, color, size = 12 }) {
   return (
-    <span
-      style={{
-        background: style.bg,
-        color: style.text,
-        padding: "2px 10px",
-        borderRadius: 99,
-        fontSize: 11,
-        fontWeight: 700,
-        letterSpacing: 0.8,
-        textTransform: "uppercase",
-      }}
-    >
-      {severity}
+    <span style={{ fontFamily: "'Space Mono', monospace", fontSize: size, color: color || "#6b8099" }}>
+      {children}
     </span>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Upload zone
-// ---------------------------------------------------------------------------
+function Tag({ children, color = "#f59e0b" }) {
+  return (
+    <span style={{
+      fontFamily: "'Space Mono', monospace",
+      fontSize: 10, fontWeight: 700, letterSpacing: 1,
+      padding: "2px 8px", borderRadius: 3,
+      background: color + "18", color, border: `1px solid ${color}30`,
+      textTransform: "uppercase",
+    }}>{children}</span>
+  );
+}
+
+function StatusDot({ status }) {
+  const map = {
+    FLAGGED: "#ef4444", CLEAN: "#10b981",
+    PENDING: "#6b8099", SCANNING: "#3b82f6", ERROR: "#f97316",
+  };
+  const color = map[status?.toUpperCase()] || "#6b8099";
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+      <span style={{
+        width: 7, height: 7, borderRadius: "50%", background: color, flexShrink: 0,
+        boxShadow: status === "FLAGGED" ? `0 0 6px ${color}` : "none",
+        animation: status === "SCANNING" ? "pulse 1.2s infinite" : "none",
+      }} />
+      <span style={{ fontSize: 12, color, fontWeight: 500 }}>{status}</span>
+    </span>
+  );
+}
+
+function MetricCard({ label, value, accent = "#f59e0b", sub }) {
+  return (
+    <div style={{
+      background: "#0b1019", border: "1px solid #141f2e",
+      borderRadius: 10, padding: "18px 20px",
+      borderTop: `2px solid ${accent}40`,
+    }}>
+      <div style={{ fontSize: 11, color: "#4a6070", textTransform: "uppercase", letterSpacing: 1, marginBottom: 10, fontWeight: 500 }}>
+        {label}
+      </div>
+      <div style={{ fontSize: 28, fontWeight: 600, color: "#e2eaf4", lineHeight: 1 }}>{value}</div>
+      {sub && <div style={{ fontSize: 11, color: "#4a6070", marginTop: 6 }}>{sub}</div>}
+    </div>
+  );
+}
+
 function UploadZone({ onUploaded }) {
   const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState(null);
+  const [result, setResult] = useState(null);
   const inputRef = useRef();
 
   const doUpload = useCallback(async (file) => {
-    setLoading(true);
-    setMessage(null);
+    setLoading(true); setResult(null);
     const form = new FormData();
     form.append("file", file);
-
     try {
       const res = await fetch(`${API}/upload`, { method: "POST", body: form });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Upload failed");
-      setMessage({ type: data.status === "FLAGGED" ? "warn" : "ok", text: data.message });
+      setResult({ ok: data.status !== "FLAGGED", text: data.message, status: data.status });
       onUploaded();
     } catch (e) {
-      setMessage({ type: "err", text: e.message });
-    } finally {
-      setLoading(false);
-    }
+      setResult({ ok: false, text: e.message, status: "ERROR" });
+    } finally { setLoading(false); }
   }, [onUploaded]);
-
-  const onDrop = (e) => {
-    e.preventDefault();
-    setDragging(false);
-    const file = e.dataTransfer.files[0];
-    if (file) doUpload(file);
-  };
-
-  const msgColors = { ok: "#00e676", warn: "#ff9800", err: "#ff1744" };
-
-  return (
-    <div
-      onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-      onDragLeave={() => setDragging(false)}
-      onDrop={onDrop}
-      onClick={() => inputRef.current.click()}
-      style={{
-        border: `2px dashed ${dragging ? "#7c4dff" : "#334"}`,
-        borderRadius: 16,
-        padding: "36px 24px",
-        textAlign: "center",
-        cursor: "pointer",
-        background: dragging ? "rgba(124,77,255,0.07)" : "rgba(255,255,255,0.02)",
-        transition: "all 0.2s",
-        userSelect: "none",
-      }}
-    >
-      <input
-        ref={inputRef}
-        type="file"
-        style={{ display: "none" }}
-        onChange={(e) => e.target.files[0] && doUpload(e.target.files[0])}
-      />
-      {loading ? (
-        <Spinner />
-      ) : (
-        <>
-          <div style={{ fontSize: 40, marginBottom: 8 }}>📂</div>
-          <p style={{ color: "#aab", margin: 0 }}>
-            Drag &amp; drop a file here, or click to browse
-          </p>
-        </>
-      )}
-      {message && (
-        <p style={{ marginTop: 14, color: msgColors[message.type], fontWeight: 600 }}>
-          {message.text}
-        </p>
-      )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// File list table
-// ---------------------------------------------------------------------------
-function statusStyle(status) {
-  const map = {
-    FLAGGED: { color: "#ff5252", icon: "🔴" },
-    CLEAN: { color: "#69f0ae", icon: "🟢" },
-    PENDING: { color: "#90a4ae", icon: "⏳" },
-    SCANNING: { color: "#82b1ff", icon: "🔍" },
-    ERROR: { color: "#ff6d00", icon: "⚠️" },
-  };
-  return map[status?.toUpperCase()] || { color: "#ccc", icon: "❓" };
-}
-
-function FileTable({ files, selectedId, onSelect }) {
-  if (!files.length)
-    return (
-      <p style={{ color: "#667", textAlign: "center", padding: 24 }}>
-        No files scanned yet. Upload one above.
-      </p>
-    );
-
-  return (
-    <div style={{ overflowX: "auto" }}>
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-        <thead>
-          <tr style={{ borderBottom: "1px solid #223" }}>
-            {["ID", "Name", "Type", "Status", "Submitted"].map((h) => (
-              <th
-                key={h}
-                style={{
-                  padding: "10px 14px",
-                  textAlign: "left",
-                  color: "#667",
-                  fontWeight: 600,
-                  letterSpacing: 0.5,
-                }}
-              >
-                {h}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {files.map((f) => {
-            const st = statusStyle(f.status);
-            const isSelected = f.file_id === selectedId;
-            return (
-              <tr
-                key={f.file_id}
-                onClick={() => onSelect(f.file_id)}
-                style={{
-                  borderBottom: "1px solid #1a1e2b",
-                  cursor: "pointer",
-                  background: isSelected
-                    ? "rgba(124,77,255,0.12)"
-                    : "transparent",
-                  transition: "background 0.15s",
-                }}
-                onMouseEnter={(e) => {
-                  if (!isSelected) e.currentTarget.style.background = "rgba(255,255,255,0.04)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = isSelected
-                    ? "rgba(124,77,255,0.12)"
-                    : "transparent";
-                }}
-              >
-                <td style={{ padding: "10px 14px", color: "#667" }}>{f.file_id}</td>
-                <td style={{ padding: "10px 14px", color: "#dde" }}>
-                  {f.file_name || <em style={{ color: "#556" }}>unnamed</em>}
-                </td>
-                <td style={{ padding: "10px 14px" }}>
-                  <code style={{ color: "#9c8cff", fontSize: 12 }}>{f.file_type?.toUpperCase()}</code>
-                </td>
-                <td style={{ padding: "10px 14px" }}>
-                  <span style={{ color: st.color, fontWeight: 600 }}>
-                    {st.icon} {f.status}
-                  </span>
-                </td>
-                <td style={{ padding: "10px 14px", color: "#667" }}>
-                  {new Date(f.submitted_at).toLocaleString()}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Entropy heatmap
-// ---------------------------------------------------------------------------
-function EntropyHeatmap({ segments, baseline }) {
-  const [tooltip, setTooltip] = useState(null);
-  const mean = baseline?.mean_entropy ?? 4.0;
-  const sigma = baseline?.threshold_sigma ?? 1.0;
-
-  if (!segments.length)
-    return <p style={{ color: "#556", textAlign: "center" }}>No segments found.</p>;
 
   return (
     <div>
-      {/* Legend */}
-      <div style={{ display: "flex", gap: 18, marginBottom: 14, flexWrap: "wrap" }}>
-        {[
-          { color: "hsl(142,70%,18%)", label: "Low (0.0)" },
-          { color: "hsl(48,96%,53%)", label: `Baseline (${mean.toFixed(2)})` },
-          { color: "hsl(0,90%,50%)", label: `Anomaly (>${(mean + sigma).toFixed(2)})` },
-        ].map(({ color, label }) => (
-          <div key={label} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <div style={{ width: 14, height: 14, borderRadius: 3, background: color }} />
-            <span style={{ fontSize: 12, color: "#889" }}>{label}</span>
-          </div>
-        ))}
-      </div>
-
-      {/* Grid */}
       <div
+        onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files[0]; if (f) doUpload(f); }}
+        onClick={() => !loading && inputRef.current.click()}
         style={{
-          display: "flex",
-          flexWrap: "wrap",
-          gap: 3,
-          position: "relative",
+          border: `1px dashed ${dragging ? "#f59e0b" : "#1e2d3d"}`,
+          borderRadius: 10, padding: "32px 24px", textAlign: "center",
+          cursor: loading ? "default" : "pointer",
+          background: dragging ? "rgba(245,158,11,0.04)" : "#08101a",
+          transition: "all 0.2s", position: "relative", overflow: "hidden",
         }}
       >
-        {segments.map((seg) => {
-          const color = entropyToColor(seg.entropy_score, mean, sigma);
-          const isAnomaly = seg.entropy_score > mean + sigma;
-          return (
-            <div
-              key={seg.segment_id}
-              onMouseEnter={(e) =>
-                setTooltip({
-                  x: e.clientX,
-                  y: e.clientY,
-                  seg,
-                  isAnomaly,
-                })
-              }
-              onMouseMove={(e) =>
-                setTooltip((t) => t && { ...t, x: e.clientX, y: e.clientY })
-              }
-              onMouseLeave={() => setTooltip(null)}
-              style={{
-                width: 22,
-                height: 22,
-                borderRadius: 4,
-                background: color,
-                boxShadow: isAnomaly ? `0 0 8px 2px ${color}` : "none",
-                cursor: "default",
-                transition: "transform 0.1s",
-              }}
-              onMouseOver={(e) => { e.currentTarget.style.transform = "scale(1.35)"; }}
-              onFocus={() => { }}
-              onBlur={() => { }}
-            />
-          );
-        })}
-      </div>
-
-      {/* Floating tooltip */}
-      {tooltip && (
-        <div
-          style={{
-            position: "fixed",
-            left: tooltip.x + 14,
-            top: tooltip.y + 14,
-            background: "#0d1117",
-            border: "1px solid #334",
-            borderRadius: 8,
-            padding: "8px 12px",
-            fontSize: 12,
-            color: "#dde",
-            pointerEvents: "none",
-            zIndex: 9999,
-            minWidth: 180,
-            boxShadow: "0 4px 24px rgba(0,0,0,0.5)",
-          }}
-        >
-          <div style={{ fontWeight: 700, marginBottom: 4 }}>
-            Segment #{tooltip.seg.segment_index}
+        <input ref={inputRef} type="file" style={{ display: "none" }}
+          onChange={(e) => e.target.files[0] && doUpload(e.target.files[0])} />
+        {loading ? (
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
+            <div style={{ width: 24, height: 24, border: "2px solid #1e2d3d", borderTop: "2px solid #f59e0b", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+            <Mono color="#4a6070">analyzing entropy...</Mono>
           </div>
-          <div>Entropy: <strong style={{ color: tooltip.isAnomaly ? "#ff5252" : "#69f0ae" }}>
-            {tooltip.seg.entropy_score.toFixed(4)}
-          </strong></div>
-          <div style={{ color: "#667", marginTop: 2 }}>
-            Threshold: {(mean + sigma).toFixed(4)}
-          </div>
-          {tooltip.isAnomaly && (
-            <div style={{ color: "#ff5252", fontWeight: 600, marginTop: 4 }}>
-              ⚠ ANOMALY
+        ) : (
+          <>
+            <div style={{ marginBottom: 10 }}>
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#4a6070" strokeWidth="1.5" style={{ margin: "0 auto" }}>
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" />
+              </svg>
             </div>
-          )}
+            <div style={{ fontSize: 13, color: "#6b8099", marginBottom: 4 }}>Drop file or click to browse</div>
+            <Mono color="#2a3d50">PDF · JPG · PNG · TXT</Mono>
+          </>
+        )}
+      </div>
+      {result && (
+        <div style={{
+          marginTop: 10, padding: "10px 14px", borderRadius: 8,
+          background: result.ok ? "rgba(16,185,129,0.06)" : "rgba(239,68,68,0.06)",
+          border: `1px solid ${result.ok ? "#10b98130" : "#ef444430"}`,
+          fontSize: 13, color: result.ok ? "#10b981" : "#ef4444",
+        }}>
+          {result.text}
         </div>
       )}
     </div>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Threat panel — shown only when status === FLAGGED
-// ---------------------------------------------------------------------------
-function ThreatPanel({ alerts }) {
-  if (!alerts.length)
-    return (
-      <p style={{ color: "#556", fontStyle: "italic" }}>No alert records found.</p>
-    );
+function FileTable({ files, selectedId, onSelect }) {
+  if (!files.length) return (
+    <div style={{ padding: "32px 0", textAlign: "center" }}>
+      <Mono color="#2a3d50">no files scanned yet</Mono>
+    </div>
+  );
+  return (
+    <table style={{ width: "100%", borderCollapse: "collapse" }}>
+      <thead>
+        <tr style={{ borderBottom: "1px solid #141f2e" }}>
+          {["ID", "Filename", "Type", "Status", "Submitted"].map(h => (
+            <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: 10, color: "#2e4257", fontWeight: 600, letterSpacing: 1, textTransform: "uppercase", fontFamily: "'Space Mono', monospace" }}>
+              {h}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {files.map(f => (
+          <tr key={f.file_id} className="row-hover" onClick={() => onSelect(f.file_id)}
+            style={{ borderBottom: "1px solid #0d1520", cursor: "pointer", background: f.file_id === selectedId ? "rgba(245,158,11,0.06)" : "transparent", transition: "background 0.15s" }}>
+            <td style={{ padding: "11px 12px" }}><Mono color="#2e4257">#{f.file_id}</Mono></td>
+            <td style={{ padding: "11px 12px", fontSize: 13, color: f.file_name ? "#c8d6e8" : "#2e4257", fontStyle: f.file_name ? "normal" : "italic" }}>
+              {f.file_name || "unnamed"}
+            </td>
+            <td style={{ padding: "11px 12px" }}><Tag>{f.file_type}</Tag></td>
+            <td style={{ padding: "11px 12px" }}><StatusDot status={f.status} /></td>
+            <td style={{ padding: "11px 12px" }}><Mono>{new Date(f.submitted_at).toLocaleString()}</Mono></td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function EntropyHeatmap({ segments, baseline, onChunkClick }) {
+  const [tooltip, setTooltip] = useState(null);
+  const mean = baseline?.mean_entropy ?? 4.0;
+  const sigma = baseline?.threshold_sigma ?? 1.0;
+  if (!segments.length) return <Mono color="#2a3d50">no segments</Mono>;
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 16, marginBottom: 16, flexWrap: "wrap" }}>
+        {[
+          { color: "hsl(158,64%,22%)", label: "Low entropy" },
+          { color: "hsl(43,95%,55%)", label: `Baseline (${mean.toFixed(2)})` },
+          { color: "hsl(0,88%,52%)", label: `Anomaly (>${(mean + sigma).toFixed(2)})` },
+        ].map(({ color, label }) => (
+          <div key={label} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div style={{ width: 10, height: 10, borderRadius: 2, background: color }} />
+            <span style={{ fontSize: 11, color: "#4a6070", fontFamily: "'Space Mono', monospace" }}>{label}</span>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 2 }}>
+        {segments.map(seg => {
+          const color = entropyToColor(seg.entropy_score, mean, sigma);
+          const isAnom = seg.entropy_score > mean + sigma;
+          return (
+            <div key={seg.segment_id}
+              onClick={() => onChunkClick(seg)}
+              onMouseEnter={e => setTooltip({ x: e.clientX, y: e.clientY, seg, isAnom })}
+              onMouseMove={e => setTooltip(t => t && { ...t, x: e.clientX, y: e.clientY })}
+              onMouseLeave={() => setTooltip(null)}
+              style={{
+                width: 20, height: 20, borderRadius: 3, background: color,
+                cursor: "zoom-in", transition: "transform 0.1s",
+                outline: isAnom ? `1px solid ${color}80` : "none",
+              }}
+              onMouseOver={e => { e.currentTarget.style.transform = "scale(1.4)"; e.currentTarget.style.zIndex = 10; }}
+              onMouseOut={e => { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.zIndex = 1; }}
+            />
+          );
+        })}
+      </div>
+      {tooltip && (
+        <div style={{
+          position: "fixed", left: tooltip.x + 12, top: tooltip.y + 12,
+          background: "#0d1520", border: "1px solid #1e2d3d",
+          borderRadius: 8, padding: "10px 14px", fontSize: 12,
+          pointerEvents: "none", zIndex: 9999, minWidth: 160,
+          fontFamily: "'Space Mono', monospace",
+        }}>
+          <div style={{ color: "#6b8099", marginBottom: 4 }}>seg #{tooltip.seg.segment_index}</div>
+          <div style={{ color: tooltip.isAnom ? "#ef4444" : "#10b981", fontWeight: 700, fontSize: 14 }}>
+            {tooltip.seg.entropy_score.toFixed(4)}
+          </div>
+          <div style={{ color: "#2e4257", marginTop: 4 }}>threshold {(tooltip.seg.entropy_score > 0 ? mean + sigma : 0).toFixed(4)}</div>
+          {tooltip.isAnom && <div style={{ color: "#ef4444", marginTop: 6 }}>ANOMALY</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AlertList({ alerts }) {
+  if (!alerts.length) return <Mono color="#2a3d50">no alerts</Mono>;
+  const sevColor = { CRITICAL: "#ef4444", HIGH: "#f97316", MEDIUM: "#f59e0b", LOW: "#eab308" };
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {alerts.map(a => (
+        <div key={a.alert_id} style={{
+          background: "#08101a", border: "1px solid #141f2e",
+          borderLeft: `3px solid ${sevColor[a.severity] || "#6b8099"}`,
+          borderRadius: "0 8px 8px 0", padding: "12px 14px",
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+            <Tag color={sevColor[a.severity] || "#6b8099"}>{a.severity}</Tag>
+            <Mono color={sevColor[a.severity] || "#6b8099"} size={13}>{a.entropy_score?.toFixed(4)}</Mono>
+          </div>
+          <div style={{ fontSize: 12, color: "#4a6070", lineHeight: 1.5 }}>{a.description || "High entropy segment detected"}</div>
+          <div style={{ marginTop: 6 }}><Mono>{new Date(a.created_at).toLocaleString()}</Mono></div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Panel({ children, style = {} }) {
+  return (
+    <div style={{
+      background: "#0b1019", border: "1px solid #141f2e",
+      borderRadius: 10, padding: "20px 22px", ...style,
+    }}>{children}</div>
+  );
+}
+
+function PanelTitle({ children }) {
+  return (
+    <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
+      <div style={{ width: 3, height: 14, background: "#f59e0b", borderRadius: 2 }} />
+      <span style={{ fontSize: 11, fontFamily: "'Space Mono', monospace", color: "#4a6070", letterSpacing: 1, textTransform: "uppercase" }}>
+        {children}
+      </span>
+    </div>
+  );
+}
+
+function LoginScreen({ onLogin }) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(`${API}/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Login failed");
+      onLogin(data);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      {alerts.map((a) => (
-        <div
-          key={a.alert_id}
-          style={{
-            background: "rgba(255,82,82,0.07)",
-            border: "1px solid rgba(255,82,82,0.25)",
-            borderRadius: 10,
-            padding: "12px 16px",
-            display: "flex",
-            alignItems: "flex-start",
-            gap: 12,
-          }}
-        >
-          <span style={{ fontSize: 20, lineHeight: 1 }}>🚨</span>
-          <div style={{ flex: 1 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-              <SeverityBadge severity={a.severity} />
-              {a.entropy_score != null && (
-                <span style={{ color: "#778", fontSize: 12 }}>
-                  score: <strong style={{ color: "#ff5252" }}>{a.entropy_score.toFixed(4)}</strong>
-                </span>
-              )}
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#060910" }}>
+      <div style={{ width: 400, padding: 40, background: "#0b1019", border: "1px solid #141f2e", borderRadius: 16, boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.5)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 32, justifyContent: "center" }}>
+            <div style={{ width: 38, height: 38, borderRadius: 8, background: "#f59e0b", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#060910" strokeWidth="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>
             </div>
-            <p style={{ margin: 0, color: "#ccd", fontSize: 13 }}>
-              {a.description || "No description provided."}
-            </p>
-            <p style={{ margin: "4px 0 0", color: "#556", fontSize: 11 }}>
-              {new Date(a.created_at).toLocaleString()}
-            </p>
+            <div style={{ fontSize: 24, fontWeight: 600, color: "#e2eaf4", letterSpacing: -0.5 }}>LumenAid</div>
+        </div>
+        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div>
+            <label style={{ fontSize: 11, color: "#4a6070", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6, display: "block" }}>Username</label>
+            <input type="text" className="login-input" value={username} onChange={e=>setUsername(e.target.value)} />
+          </div>
+          <div>
+            <label style={{ fontSize: 11, color: "#4a6070", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6, display: "block" }}>Password</label>
+            <input type="password" className="login-input" value={password} onChange={e=>setPassword(e.target.value)} />
+          </div>
+          {error && <div style={{ color: "#ef4444", fontSize: 13, background: "rgba(239,68,68,0.1)", padding: 10, borderRadius: 6, border: "1px solid #ef444430" }}>{error}</div>}
+          <button type="submit" disabled={loading} style={{ background: "#f59e0b", color: "#060910", padding: "14px 16px", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: loading ? "default" : "pointer", marginTop: 8 }}>
+            {loading ? "Authenticating..." : "System Login"}
+          </button>
+        </form>
+        <div style={{ marginTop: 24, textAlign: "center", fontSize: 11, color: "#2e4257" }}>
+          <Mono>Week 3 Deliverable: Authentication Portal</Mono>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HexDumpModal({ chunk, onClose }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState("analysis"); // "analysis" | "raw"
+
+  useEffect(() => {
+    fetch(`${API}/chunks/${chunk.raw_chunk_ref}/hex`)
+      .then(r => r.json())
+      .then(d => setData(d))
+      .finally(() => setLoading(false));
+  }, [chunk]);
+
+  const Tab = ({ id, label }) => (
+    <button 
+      onClick={() => setActiveTab(id)}
+      style={{
+        padding: "8px 16px", border: "none", background: "transparent",
+        color: activeTab === id ? "#f59e0b" : "#4a6070",
+        borderBottom: `2px solid ${activeTab === id ? "#f59e0b" : "transparent"}`,
+        fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all 0.2s"
+      }}
+    >{label}</button>
+  );
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content" onClick={e => e.stopPropagation()}>
+        <div style={{ padding: "16px 20px", borderBottom: "1px solid #141f2e", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: "#e2eaf4" }}>Deep-Dive Sandbox</div>
+              <Mono color="#4a6070">seg #{chunk.segment_index} · {chunk.raw_chunk_ref}</Mono>
+            </div>
+            <div style={{ display: "flex", gap: 8, background: "#060910", padding: 2, borderRadius: 6 }}>
+              <Tab id="analysis" label="THREAT ANALYSIS" />
+              <Tab id="raw" label="RAW PAYLOAD" />
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: "transparent", border: "none", color: "#4a6070", cursor: "pointer", fontSize: 20 }}>&times;</button>
+        </div>
+        
+        <div style={{ padding: 20, overflow: "auto", background: "#060910", flex: 1, display: "flex", flexDirection: "column" }}>
+          {loading ? (
+            <Mono color="#2e4257">Decompiling MongoDB shard...</Mono>
+          ) : (
+            activeTab === "analysis" ? (
+              <div className="fade-up" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+                {/* Metrics Row */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                  <div style={{ padding: 16, background: "#0b1019", borderRadius: 8, border: "1px solid #141f2e" }}>
+                    <div style={{ fontSize: 10, color: "#4a6070", marginBottom: 8, textTransform: "uppercase" }}>Entropy Density</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                       <div style={{ flex: 1, height: 6, background: "#141f2e", borderRadius: 3, overflow: "hidden" }}>
+                          <div style={{ height: "100%", width: `${(data.entropy / 8) * 100}%`, background: data.is_suspicious ? "#ef4444" : "#10b981" }} />
+                       </div>
+                       <Mono color={data.is_suspicious ? "#ef4444" : "#10b981"} size={14}>{data.entropy}</Mono>
+                    </div>
+                  </div>
+                  <div style={{ padding: 16, background: "#0b1019", borderRadius: 8, border: "1px solid #141f2e" }}>
+                    <div style={{ fontSize: 10, color: "#4a6070", marginBottom: 8, textTransform: "uppercase" }}>Security Verdict</div>
+                    <div style={{ fontSize: 13, color: data.is_suspicious ? "#ef4444" : "#c8d6e8", fontWeight: 500 }}>{data.verdict}</div>
+                  </div>
+                </div>
+
+                {/* Strings Section */}
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 11, color: "#4a6070", marginBottom: 12, textTransform: "uppercase", letterSpacing: 1 }}>Extracted Human-Readable Strings</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    {data.strings.length > 0 ? data.strings.map((s, i) => (
+                      <div key={i} style={{ padding: "6px 10px", background: "#141f2e", borderRadius: 4, border: "1px solid #1e2d3d" }}>
+                        <Mono color="#e2eaf4" size={11}>{s}</Mono>
+                      </div>
+                    )) : <Mono color="#2e4257">No readable strings found in this segment.</Mono>}
+                  </div>
+                </div>
+
+                <div style={{ marginTop: "auto", padding: 12, background: "rgba(245,158,11,0.03)", border: "1px dashed #f59e0b40", borderRadius: 8 }}>
+                   <div style={{ fontSize: 12, color: "#f59e0b", marginBottom: 4, fontWeight: 600 }}>💡 Analyst Tip</div>
+                   <div style={{ fontSize: 11, color: "#6b8099", lineHeight: 1.4 }}>
+                     This segment has been isolated because its entropy signature deviates from the file's baseline. Switch to the <b>Raw Payload</b> tab to inspect the bytecode for hidden exfiltration patterns.
+                   </div>
+                </div>
+              </div>
+            ) : (
+              <pre className="hex-dump fade-up">{data?.hex_dump}</pre>
+            )
+          )}
+        </div>
+        <div style={{ padding: "12px 20px", borderTop: "1px solid #141f2e", background: "#0b1019", display: "flex", justifyContent: "space-between" }}>
+          <Mono color="#2e4257" size={10}>Hybrid Engine: PostgreSQL Metadata + MongoDB Payload</Mono>
+          <Mono color="#2e4257" size={10}>v1.2.0-secure</Mono>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TelemetryPanel({ telemetry }) {
+  if (!telemetry.length) return <Mono color="#2a3d50">no telemetry logs yet</Mono>;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {telemetry.map(t => (
+        <div key={t._id} style={{
+          background: "#08101a", border: "1px solid #141f2e",
+          borderRadius: 8, padding: "10px 12px",
+          borderLeft: `2px solid ${t.flagged ? "#ef4444" : "#10b981"}`,
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+            <Mono size={10}>ID:{t.file_id} · {t.file_type}</Mono>
+            <Mono size={10}>{t.analysis_duration_ms}ms</Mono>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div style={{ width: 4, height: 4, borderRadius: "50%", background: t.flagged ? "#ef4444" : "#10b981" }} />
+            <span style={{ fontSize: 11, color: "#c8d6e8", fontFamily: "'Space Mono', monospace" }}>
+              {(t.file_size_bytes / 1024).toFixed(1)}KB · {t.total_segments} segments
+            </span>
           </div>
         </div>
       ))}
@@ -393,241 +478,214 @@ function ThreatPanel({ alerts }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Small utilities
-// ---------------------------------------------------------------------------
-function Spinner() {
-  return (
-    <div
-      style={{
-        width: 28,
-        height: 28,
-        border: "3px solid #334",
-        borderTop: "3px solid #7c4dff",
-        borderRadius: "50%",
-        animation: "spin 0.7s linear infinite",
-        margin: "0 auto",
-      }}
-    />
-  );
-}
-
-function Card({ children, style = {} }) {
-  return (
-    <div
-      style={{
-        background: "rgba(255,255,255,0.03)",
-        border: "1px solid #1f2535",
-        borderRadius: 16,
-        padding: 24,
-        ...style,
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
-function SectionTitle({ children }) {
-  return (
-    <h2
-      style={{
-        margin: "0 0 16px",
-        fontSize: 15,
-        fontWeight: 700,
-        color: "#9c8cff",
-        letterSpacing: 1,
-        textTransform: "uppercase",
-      }}
-    >
-      {children}
-    </h2>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Main Dashboard component
-// ---------------------------------------------------------------------------
 export default function Dashboard() {
+  const [auth, setAuth] = useState(() => JSON.parse(localStorage.getItem("lumen_auth")));
   const [files, setFiles] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [analysis, setAnalysis] = useState(null);
   const [loadingAna, setLoadingAna] = useState(false);
+  const [activeChunk, setActiveChunk] = useState(null);
+  const [telemetry, setTelemetry] = useState([]);
+
+  const isAdmin = auth?.role === "admin";
+
+  const fetchTelemetry = useCallback(async () => {
+    if (!isAdmin) return;
+    try { const res = await fetch(`${API}/telemetry`); setTelemetry(await res.json()); } catch { }
+  }, [isAdmin]);
+  const handleLogin = (data) => {
+    setAuth(data);
+    localStorage.setItem("lumen_auth", JSON.stringify(data));
+  };
+
+  const handleLogout = () => {
+    setAuth(null);
+    localStorage.removeItem("lumen_auth");
+  };
 
   const fetchFiles = useCallback(async () => {
-    try {
-      const res = await fetch(`${API}/files`);
-      const data = await res.json();
-      setFiles(data);
-    } catch {
-      /* silently retry on next upload */
-    }
+    try { const res = await fetch(`${API}/files`); setFiles(await res.json()); } catch { }
   }, []);
 
   const fetchAnalysis = useCallback(async (id) => {
-    setLoadingAna(true);
-    setAnalysis(null);
-    try {
-      const res = await fetch(`${API}/files/${id}/analysis`);
-      const data = await res.json();
-      setAnalysis(data);
-    } catch {
-      setAnalysis(null);
-    } finally {
-      setLoadingAna(false);
-    }
+    setLoadingAna(true); setAnalysis(null);
+    try { const res = await fetch(`${API}/files/${id}/analysis`); setAnalysis(await res.json()); }
+    catch { } finally { setLoadingAna(false); }
   }, []);
 
-  useEffect(() => { fetchFiles(); }, [fetchFiles]);
+  useEffect(() => { 
+    fetchFiles(); 
+    if (isAdmin) {
+      fetchTelemetry();
+      const interval = setInterval(fetchTelemetry, 10000);
+      return () => clearInterval(interval);
+    }
+  }, [fetchFiles, fetchTelemetry, isAdmin]);
 
-  const handleSelect = (id) => {
-    setSelectedId(id);
-    fetchAnalysis(id);
-  };
+  const handleSelect = (id) => { setSelectedId(id); fetchAnalysis(id); };
 
-  const handleUploaded = () => {
-    fetchFiles();
-  };
-
+  const flagged = files.filter(f => f.status === "FLAGGED").length;
+  const clean = files.filter(f => f.status === "CLEAN").length;
+  const alerts = analysis?.alerts?.length || 0;
   const isFlagged = analysis?.status?.toUpperCase() === "FLAGGED";
 
+  if (!auth) return <LoginScreen onLogin={handleLogin} />;
+
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        background: "#080c14",
-        color: "#dde",
-        fontFamily: "'Inter', system-ui, sans-serif",
-        padding: "32px 24px",
-        boxSizing: "border-box",
-      }}
-    >
-      {/* CSS for spinner + hover reset */}
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
-        * { box-sizing: border-box; }
-        body { margin: 0; }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
-        .fade-in { animation: fadeIn 0.3s ease; }
-      `}</style>
+    <div style={{ minHeight: "100vh", background: "#060910", padding: "28px 24px" }}>
+      <style>{css}</style>
+      {activeChunk && <HexDumpModal chunk={activeChunk} onClose={() => setActiveChunk(null)} />}
 
-      {/* ── Header ── */}
-      <header style={{ maxWidth: 1200, margin: "0 auto 32px", display: "flex", alignItems: "center", gap: 16 }}>
-        <div
-          style={{
-            width: 44,
-            height: 44,
-            borderRadius: 12,
-            background: "linear-gradient(135deg, #7c4dff, #00e5ff)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: 22,
-            flexShrink: 0,
-          }}
-        >
-          🔬
+      <div style={{ maxWidth: 1280, margin: "0 auto" }}>
+
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 28 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <div style={{
+              width: 38, height: 38, borderRadius: 8,
+              background: isAdmin ? "#f59e0b" : "#3b82f6", display: "flex", alignItems: "center", justifyContent: "center",
+            }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#060910" strokeWidth="2.5">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+              </svg>
+            </div>
+            <div>
+              <div style={{ fontSize: 17, fontWeight: 600, color: "#e2eaf4", letterSpacing: -0.3 }}>LumenAid</div>
+              <Mono color="#2e4257">steganographic detection engine</Mono>
+            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div onClick={handleLogout} style={{ cursor: "pointer", padding: "6px 14px", background: "#0b1019", border: "1px solid #141f2e", borderRadius: 20, display: "flex", alignItems: "center", gap: 8 }}>
+               <Mono color="#e2eaf4">{auth.username}</Mono>
+               <Tag color="#4a6070">{auth.role}</Tag>
+               <div style={{ width: 1, height: 10, background: "#141f2e" }} />
+               <Mono color="#ef4444" size={10}>LOGOUT</Mono>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 14px", background: "#0b1019", border: "1px solid #141f2e", borderRadius: 20 }}>
+              <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#10b981" }} />
+              <Mono color="#10b981">system online</Mono>
+            </div>
+          </div>
         </div>
-        <div>
-          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, letterSpacing: -0.5 }}>
-            LumenAid
-          </h1>
-          <p style={{ margin: 0, fontSize: 13, color: "#667" }}>
-            Steganographic Data Exfiltration Detection Engine
-          </p>
+
+        {/* Metrics */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
+          <MetricCard label="Files scanned" value={files.length} accent="#3b82f6" sub="all time" />
+          <MetricCard label="Threats detected" value={flagged} accent="#ef4444" sub="flagged files" />
+          <MetricCard label="Alerts raised" value={alerts || "—"} accent="#f59e0b" sub="anomalous segments" />
+          <MetricCard label="Clean files" value={clean} accent="#10b981" sub="passed scan" />
         </div>
-      </header>
 
-      <div style={{ maxWidth: 1200, margin: "0 auto", display: "flex", flexDirection: "column", gap: 24 }}>
+        {/* Main layout */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 16 }}>
 
-        {/* ── Upload ── */}
-        <Card>
-          <SectionTitle>Upload &amp; Scan</SectionTitle>
-          <UploadZone onUploaded={handleUploaded} />
-        </Card>
+          {/* Left */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <Panel>
+              <PanelTitle>Upload & Scan</PanelTitle>
+              <UploadZone onUploaded={fetchFiles} />
+            </Panel>
 
-        {/* ── File list ── */}
-        <Card>
-          <SectionTitle>Scanned Files</SectionTitle>
-          <FileTable files={files} selectedId={selectedId} onSelect={handleSelect} />
-        </Card>
-
-        {/* ── Analysis pane (shown after selecting a file) ── */}
-        {(selectedId || loadingAna) && (
-          <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-
-            {loadingAna && (
-              <Card style={{ textAlign: "center", padding: 48 }}>
-                <Spinner />
-                <p style={{ color: "#556", marginTop: 12 }}>Loading analysis…</p>
-              </Card>
-            )}
+            <Panel>
+              <PanelTitle>Scanned files</PanelTitle>
+              <FileTable files={files} selectedId={selectedId} onSelect={handleSelect} />
+            </Panel>
 
             {analysis && !loadingAna && (
-              <>
-                {/* ── File summary bar ── */}
-                <Card
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 16,
-                    flexWrap: "wrap",
-                    background: isFlagged
-                      ? "rgba(255,82,82,0.05)"
-                      : "rgba(105,240,174,0.04)",
-                    border: isFlagged
-                      ? "1px solid rgba(255,82,82,0.2)"
-                      : "1px solid rgba(105,240,174,0.15)",
-                  }}
-                >
-                  <div style={{ fontSize: 36 }}>{isFlagged ? "🔴" : "🟢"}</div>
+              <Panel className="fade-up" style={{
+                borderColor: isFlagged ? "#ef444330" : "#10b98130",
+                borderTop: `2px solid ${isFlagged ? "#ef4444" : "#10b981"}`,
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 20 }}>
+                  <div style={{
+                    width: 40, height: 40, borderRadius: 8, flexShrink: 0,
+                    background: isFlagged ? "rgba(239,68,68,0.12)" : "rgba(16,185,129,0.12)",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                  }}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                      stroke={isFlagged ? "#ef4444" : "#10b981"} strokeWidth="2">
+                      {isFlagged
+                        ? <><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></>
+                        : <path d="M22 11.08V12a10 10 0 11-5.93-9.14M22 4L12 14.01l-3-3" />
+                      }
+                    </svg>
+                  </div>
                   <div>
-                    <p style={{ margin: 0, fontSize: 18, fontWeight: 700, color: isFlagged ? "#ff5252" : "#69f0ae" }}>
-                      {isFlagged ? "THREAT DETECTED" : "FILE IS CLEAN"}
-                    </p>
-                    <p style={{ margin: 0, fontSize: 13, color: "#667" }}>
-                      file_id {analysis.file_id} &nbsp;·&nbsp;
-                      type <code style={{ color: "#9c8cff" }}>{analysis.file_type?.toUpperCase()}</code> &nbsp;·&nbsp;
-                      {analysis.segments.length} segments
-                    </p>
+                    <div style={{ fontSize: 16, fontWeight: 600, color: isFlagged ? "#ef4444" : "#10b981" }}>
+                      {isFlagged ? "Threat Detected" : "File Clean"}
+                    </div>
+                    <div style={{ fontSize: 12, color: "#4a6070", marginTop: 2 }}>
+                      <Mono>file_id:{analysis.file_id}</Mono>
+                      &nbsp;·&nbsp;<Tag>{analysis.file_type}</Tag>
+                      &nbsp;·&nbsp;<Mono>{analysis.segments.length} segments</Mono>
+                    </div>
                   </div>
                   {analysis.baseline && (
                     <div style={{ marginLeft: "auto", textAlign: "right" }}>
-                      <p style={{ margin: 0, fontSize: 12, color: "#556" }}>Baseline</p>
-                      <p style={{ margin: 0, fontSize: 13, color: "#9c8cff", fontWeight: 600 }}>
-                        μ = {analysis.baseline.mean_entropy.toFixed(4)} &nbsp;
-                        σ = {analysis.baseline.threshold_sigma.toFixed(4)}
-                      </p>
+                      <div style={{ fontSize: 10, color: "#2e4257", marginBottom: 4, fontFamily: "'Space Mono', monospace" }}>BASELINE</div>
+                      <Mono color="#f59e0b" size={13}>μ={analysis.baseline.mean_entropy.toFixed(2)} σ={analysis.baseline.threshold_sigma.toFixed(2)}</Mono>
                     </div>
                   )}
-                </Card>
+                </div>
+                <PanelTitle>Entropy Heatmap (Click segment for Hex Dump)</PanelTitle>
+                <EntropyHeatmap 
+                  segments={analysis.segments} 
+                  baseline={analysis.baseline} 
+                  onChunkClick={(seg) => setActiveChunk(seg)}
+                />
+              </Panel>
+            )}
 
-                {/* ── Entropy heatmap ── */}
-                <Card>
-                  <SectionTitle>Entropy Heatmap</SectionTitle>
-                  <EntropyHeatmap
-                    segments={analysis.segments}
-                    baseline={analysis.baseline}
-                  />
-                </Card>
-
-                {/* ── Threat panel (only when FLAGGED) ── */}
-                {isFlagged && (
-                  <Card
-                    style={{
-                      border: "1px solid rgba(255,82,82,0.3)",
-                      background: "rgba(255,82,82,0.03)",
-                    }}
-                  >
-                    <SectionTitle>⚠ Threat Alerts</SectionTitle>
-                    <ThreatPanel alerts={analysis.alerts} />
-                  </Card>
-                )}
-              </>
+            {loadingAna && (
+              <Panel style={{ textAlign: "center", padding: "40px 0" }}>
+                <div style={{ width: 22, height: 22, border: "2px solid #141f2e", borderTop: "2px solid #f59e0b", borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 12px" }} />
+                <Mono color="#2e4257">loading analysis...</Mono>
+              </Panel>
             )}
           </div>
-        )}
+
+          {/* Right sidebar */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            {isAdmin && (
+              <Panel style={{ borderTop: "2px solid #f59e0b" }}>
+                <PanelTitle>System Audit Logs (MongoDB Telemetry)</PanelTitle>
+                <TelemetryPanel telemetry={telemetry} />
+              </Panel>
+            )}
+
+            {isAdmin && (
+              <Panel>
+                <PanelTitle>Detection thresholds (Admin Only)</PanelTitle>
+                {[
+                  { type: "TEXT", mean: 4.5, sigma: 0.4, color: "#3b82f6" },
+                  { type: "PDF", mean: 7.7, sigma: 0.2, color: "#f59e0b" },
+                  { type: "JPG", mean: 7.75, sigma: 0.15, color: "#10b981" },
+                  { type: "PNG", mean: 7.5, sigma: 0.15, color: "#8b5cf6" },
+                ].map(b => (
+                  <div key={b.type} style={{ marginBottom: 14 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                      <Tag color={b.color}>{b.type}</Tag>
+                      <Mono color={b.color} size={11}>threshold {(b.mean + b.sigma).toFixed(2)}</Mono>
+                    </div>
+                    <div style={{ height: 4, background: "#0d1520", borderRadius: 2, overflow: "hidden" }}>
+                      <div style={{ height: "100%", width: `${((b.mean / 8) * 100).toFixed(1)}%`, background: b.color + "60", borderRadius: 2 }} />
+                    </div>
+                  </div>
+                ))}
+              </Panel>
+            )}
+
+            <Panel style={{ flex: 1 }}>
+              <PanelTitle>
+                {isFlagged ? `Threat alerts (${analysis?.alerts?.length || 0})` : "Threat alerts"}
+              </PanelTitle>
+              {analysis
+                ? <AlertList alerts={analysis.alerts} />
+                : <Mono color="#2a3d50">select a file to view alerts</Mono>
+              }
+            </Panel>
+          </div>
+        </div>
       </div>
     </div>
   );

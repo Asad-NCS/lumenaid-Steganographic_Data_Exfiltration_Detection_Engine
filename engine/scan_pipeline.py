@@ -126,7 +126,7 @@ class ScanPipeline:
             "JPEG": "JPG",
         }
         mapped_type = type_mapping.get(ext_upper, ext_upper)
-        supported_types = {"TEXT", "JPG", "PDF"}
+        supported_types = {"TEXT", "JPG", "PDF", "PNG"}
         
         if mapped_type not in supported_types:
             return ScanResult(

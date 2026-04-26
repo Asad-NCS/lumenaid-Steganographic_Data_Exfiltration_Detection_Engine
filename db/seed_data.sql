@@ -17,7 +17,7 @@ ON CONFLICT (type_code) DO UPDATE
 INSERT INTO baselines (file_type, mean_entropy, threshold_sigma)
 VALUES
     ('TEXT',   4.5000, 0.4000),
-    ('PDF',    7.4000, 0.3500),
+    ('PDF',    7.7000, 0.2000),
     ('JPG',    7.7500, 0.1500),
     ('PNG',    7.5000, 0.1500)
 ON CONFLICT (file_type) DO UPDATE
@@ -26,6 +26,8 @@ ON CONFLICT (file_type) DO UPDATE
         updated_at      = NOW();
 
 INSERT INTO users (email, username, password_hash, role) VALUES
-('admin@lumenaid.local',   'admin',   '$2b$12$placeholder_admin_hash',   'admin'),
-('analyst@lumenaid.local', 'analyst', '$2b$12$placeholder_analyst_hash', 'analyst')
-ON CONFLICT (email) DO NOTHING;
+('admin@lumenaid.local',   'admin',   '$2b$12$ROBsC1EbGqJrQDFWw4zs0OSGBDFbjxsyXXbe2DGxnytEwYWVSRd1a',   'admin'),
+('analyst@lumenaid.local', 'analyst', '$2b$12$3guOaCWWKocrPjeNyGgNeOIrtYPPJEF0CF0i4px5eHrEwxslPOHYO', 'analyst')
+ON CONFLICT (email) DO UPDATE
+    SET password_hash = EXCLUDED.password_hash,
+        role          = EXCLUDED.role;

@@ -12,3 +12,6 @@ pymongo==4.7.1                # MongoDB driver
 
 # --- Engine layer (already in engine/) ---
 # No extra dependencies — uses stdlib only (math, os)
+
+# --- Security/Auth ---
+bcrypt==4.0.1
