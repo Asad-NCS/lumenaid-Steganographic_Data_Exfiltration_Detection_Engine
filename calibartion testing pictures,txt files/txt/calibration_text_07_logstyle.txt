@@ -1,0 +1,5 @@
+2026-04-27T09:12:05Z INFO  ingest.start source=sample_07
+2026-04-27T09:12:06Z DEBUG chunk id=1 size=4096 entropy=0.62
+2026-04-27T09:12:06Z DEBUG chunk id=2 size=4096 entropy=0.63
+2026-04-27T09:12:07Z WARN  anomaly.score value=0.71 threshold=0.70
+2026-04-27T09:12:08Z INFO  action=flag_for_review file=sample_07

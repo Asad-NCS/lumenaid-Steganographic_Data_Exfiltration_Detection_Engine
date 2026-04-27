@@ -192,18 +192,12 @@ class UploadResponse(BaseModel):
     alerts_raised:  int
     message:        str
 
-class FileRecord(BaseModel):
-    file_id:      int
-    file_name:    Optional[str]
-    file_type:    str
-    status:       str
-    submitted_at: str            # ISO-8601 string
-
 class SegmentRecord(BaseModel):
-    segment_id:    int
-    segment_index: int
-    entropy_score: float
-    raw_chunk_ref: str           # MongoDB ObjectId hex — never raw bytes
+    segment_id:       int
+    segment_index:    int
+    entropy_score:    float
+    chi_square_score: float
+    raw_chunk_ref:    str
 
 class AlertRecord(BaseModel):
     alert_id:     int
@@ -214,12 +208,15 @@ class AlertRecord(BaseModel):
     created_at:   str
 
 class FileAnalysisResponse(BaseModel):
-    file_id:   int
-    file_type: str
-    status:    str
-    baseline:  Optional[dict]    # {mean_entropy, threshold_sigma} if available
-    segments:  List[SegmentRecord]
-    alerts:    List[AlertRecord]
+    file_id:       int
+    file_type:     str
+    status:        str
+    threat_score:  int
+    risk_level:    str
+    baseline:      Optional[dict]
+    segments:      List[SegmentRecord]
+    alerts:        List[AlertRecord]
+    signals_fired: dict   # {signal_1: bool, signal_2: bool, signal_3: bool, signal_4: bool}
 
 
 # 
@@ -290,7 +287,7 @@ def get_chunk_hex(chunk_id: str):
         conn = get_pg_conn()
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute("""
-                SELECT b.mean_entropy, b.threshold_sigma, f.file_type
+                SELECT b.mean_entropy, b.threshold_sigma, b.mean_chi, b.sigma_chi, f.file_type, s.chi_square_score
                 FROM segments s
                 JOIN files f ON s.file_id = f.file_id
                 JOIN baselines b ON f.file_type = b.file_type
@@ -310,19 +307,23 @@ def get_chunk_hex(chunk_id: str):
         
         # Compare against real baseline
         threshold = 7.5 # fallback
+        chi_threshold = 50.0
         file_type = "UNKNOWN"
         if context:
-            threshold = float(context["mean_entropy"]) + float(context["threshold_sigma"])
+            threshold = float(context["mean_entropy"]) + 3.0 * float(context["threshold_sigma"])
+            chi_threshold = float(context["mean_chi"] or 0) + 3.0 * float(context["sigma_chi"] or 0)
             file_type = context["file_type"]
 
-        is_suspicious = entropy > threshold
-        
+        # Smart multi-signal suspicion check
+        is_suspicious = (entropy > threshold) or (float(context.get("chi_square_score") or 0) > chi_threshold and float(context.get("chi_square_score") or 0) > 5.0)
+
         if is_suspicious:
-            verdict = f"Anomaly detected for {file_type}. Entropy ({round(entropy,2)}) exceeds threshold ({round(threshold,2)}). Likely hidden payload."
-        elif entropy > 7.0:
-            verdict = f"Normal {file_type} compression. High entropy is expected for this file format."
+            reason = "Entropy" if entropy > threshold else "Chi-Square"
+            verdict = f"Anomaly detected for {file_type} via {reason}. Significant evidence of hidden payload."
+        elif entropy > threshold - 0.5:
+            verdict = f"Suspicious {file_type} segment. Entropy is near the 3-sigma limit. Worth manual inspection."
         else:
-            verdict = f"Clean {file_type} segment. Entropy is within normal operational parameters."
+            verdict = f"Clean {file_type} segment. Entropy and byte-DNA are within calibrated 3-sigma parameters."
 
         return HexDumpResponse(
             mongo_id=chunk_id,
@@ -387,6 +388,24 @@ async def upload_file(file: UploadFile = File(...)):
     if result.status == "error":
         raise HTTPException(status_code=500, detail=result.error)
 
+    # Persist original client filename for dashboard listing.
+    try:
+        conn = get_pg_conn()
+        if conn.status != psycopg2.extensions.STATUS_READY:
+            conn.rollback()
+        safe_name = os.path.basename((file.filename or "").strip())
+        if not safe_name:
+            safe_name = f"scan_{result.file_id}.bin"
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE files SET file_name = %s WHERE file_id = %s",
+                (safe_name, result.file_id),
+            )
+            conn.commit()
+    except Exception:
+        # Non-fatal: scan result is still valid even if filename update fails.
+        pass
+
     return UploadResponse(
         file_id=result.file_id,
         status=result.status.upper(),
@@ -403,6 +422,28 @@ async def upload_file(file: UploadFile = File(...)):
  
 # GET /files
 
+class FileRecord(BaseModel):
+    file_id:      int
+    file_name:    Optional[str] = None
+    file_type:    str
+    status:       str
+    threat_score: int
+    risk_level:   str
+    is_calibrated: bool
+    submitted_at: str
+
+
+def _generated_file_name(file_id: int, file_type: Optional[str]) -> str:
+    ext_map = {
+        "TEXT": "txt",
+        "TXT": "txt",
+        "JPG": "jpg",
+        "JPEG": "jpg",
+        "PNG": "png",
+        "PDF": "pdf",
+    }
+    ext = ext_map.get((file_type or "").upper(), "bin")
+    return f"scan_{file_id}.{ext}"
 
 @app.get(
     "/files",
@@ -411,32 +452,45 @@ async def upload_file(file: UploadFile = File(...)):
     tags=["files"],
 )
 def list_files():
-    """
-    Returns every row from the files table, ordered newest-first.
-    Includes file_name, file_type, status, and submitted_at timestamp.
-    """
     conn = get_pg_conn()
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(
             """
             SELECT
-                file_id,
-                file_name,
-                file_type,
-                status,
-                submitted_at
-            FROM   files
-            ORDER  BY submitted_at DESC
+                file_id, file_name, file_type, status,
+                threat_score, risk_level, submitted_at,
+                is_calibrated
+            FROM files
+            ORDER BY submitted_at DESC
             """
         )
         rows = cur.fetchall()
 
+    # Backfill old rows that still have null/blank names.
+    missing_name_rows = [r for r in rows if not (r["file_name"] and str(r["file_name"]).strip())]
+    if missing_name_rows:
+        conn = get_pg_conn()
+        if conn.status != psycopg2.extensions.STATUS_READY:
+            conn.rollback()
+        with conn.cursor() as cur:
+            for r in missing_name_rows:
+                generated = _generated_file_name(r["file_id"], r.get("file_type"))
+                cur.execute(
+                    "UPDATE files SET file_name = %s WHERE file_id = %s",
+                    (generated, r["file_id"]),
+                )
+                r["file_name"] = generated
+            conn.commit()
+
     return [
         FileRecord(
             file_id=r["file_id"],
-            file_name=r["file_name"],
+            file_name=r["file_name"] or _generated_file_name(r["file_id"], r.get("file_type")),
             file_type=r["file_type"],
             status=r["status"],
+            threat_score=r["threat_score"] or 0,
+            risk_level=r["risk_level"] or "CLEAN",
+            is_calibrated=r["is_calibrated"],
             submitted_at=r["submitted_at"].isoformat(),
         )
         for r in rows
@@ -466,7 +520,7 @@ def get_file_analysis(file_id: int):
     #--- 1. fetch the parent file record ---
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(
-            "SELECT file_id, file_type, status FROM files WHERE file_id = %s",
+            "SELECT file_id, file_type, status, threat_score, risk_level FROM files WHERE file_id = %s",
             (file_id,),
         )
         file_row = cur.fetchone()
@@ -478,7 +532,7 @@ def get_file_analysis(file_id: int):
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(
             """
-            SELECT mean_entropy, threshold_sigma
+            SELECT mean_entropy, threshold_sigma, mean_chi, sigma_chi
             FROM   baselines
             WHERE  file_type = %s
             LIMIT  1
@@ -491,6 +545,8 @@ def get_file_analysis(file_id: int):
         {
             "mean_entropy":    float(baseline_row["mean_entropy"]),
             "threshold_sigma": float(baseline_row["threshold_sigma"]),
+            "mean_chi":        float(baseline_row["mean_chi"] or 0),
+            "sigma_chi":       float(baseline_row["sigma_chi"] or 0),
         }
         if baseline_row
         else None
@@ -504,6 +560,7 @@ def get_file_analysis(file_id: int):
                 segment_id,
                 segment_index,
                 entropy_score,
+                chi_square_score,
                 raw_chunk_ref
             FROM   segments
             WHERE  file_id = %s
@@ -518,6 +575,7 @@ def get_file_analysis(file_id: int):
             segment_id=r["segment_id"],
             segment_index=r["segment_index"],
             entropy_score=float(r["entropy_score"]),
+            chi_square_score=float(r["chi_square_score"] or 0),
             raw_chunk_ref=r["raw_chunk_ref"],
         )
         for r in seg_rows
@@ -554,13 +612,34 @@ def get_file_analysis(file_id: int):
         for r in alert_rows
     ]
 
+    #--- 5. compute which signals fired ---
+    # Signal 1: any segment entropy exceeded 3-sigma threshold
+    threshold = (baseline["mean_entropy"] + 3.0 * baseline["threshold_sigma"]) if baseline else 7.5
+    s1 = any(float(r["entropy_score"]) > threshold for r in seg_rows)
+    
+    # Signal 2: any segment chi_square exceeded 3-sigma threshold
+    chi_threshold = (baseline["mean_chi"] + 3.0 * baseline["sigma_chi"]) if baseline else 50.0
+    s2 = any(float(r["chi_square_score"] or 0) > chi_threshold and float(r["chi_square_score"] or 0) > 5.0 for r in seg_rows)
+    # Signal 3 & 4: check alert descriptions
+    alert_descs = " ".join(r["description"] or "" for r in alert_rows)
+    s3 = "Signal 3" in alert_descs or "Pattern Consistency" in alert_descs
+    s4 = "Signal 4" in alert_descs or "size anomaly" in alert_descs.lower()
+
     return FileAnalysisResponse(
         file_id=file_row["file_id"],
         file_type=file_row["file_type"],
         status=file_row["status"],
+        threat_score=int(file_row["threat_score"] or 0),
+        risk_level=file_row["risk_level"] or "CLEAN",
         baseline=baseline,
         segments=segments,
         alerts=alerts,
+        signals_fired={
+            "signal_1_entropy":  s1,
+            "signal_2_chi":      s2,
+            "signal_3_pattern":  s3,
+            "signal_4_size":     s4,
+        },
     )
 
 

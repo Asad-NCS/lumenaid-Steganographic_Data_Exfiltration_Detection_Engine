@@ -1,0 +1,27 @@
+This is a large calibration text sample designed to be noticeably bigger than the others.
+It contains multiple sections, varying line lengths, and mixed lexical style.
+
+Section A: Narrative
+The detector should see ordinary language, irregular punctuation, and periodic shifts in vocabulary. Some lines are short. Some are intentionally longer to stretch the token sequence and create less uniform structure across windows.
+
+Section B: Structured snippets
+key_a=11
+key_b=29
+key_c=47
+flag_sequence=true,false,true,true,false,false,true
+profile_tag=calibration_variant_10
+
+Section C: Pattern noise
+ZX-11 ZX-12 ZX-13 ZX-14 ZX-15 ZX-16 ZX-17 ZX-18 ZX-19 ZX-20
+HAZE HAZE HAZE HAZE WAVE WAVE WAVE NODE NODE NODE DRIFT DRIFT
+01010111000101010011100011110000
+11100011110000111100001111000011
+00011110000111100001111000011110
+
+Section D: Free prose
+If hidden payload simulation ever depends on text morphology, this file gives a wider target surface. It mixes numeric blocks, repeated terms, and natural paragraphs. The exact semantics are unimportant; diversity is the point. The lines below intentionally vary in density.
+
+thin
+medium line with balanced words and punctuation.
+this line is intentionally much much longer than the previous lines because it keeps appending descriptive fragments about channels, envelopes, byte drift, context windows, and adaptive thresholds for anomaly review.
+compact_end_marker=done

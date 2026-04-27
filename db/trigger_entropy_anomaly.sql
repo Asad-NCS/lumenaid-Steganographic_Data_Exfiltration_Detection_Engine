@@ -20,7 +20,7 @@ BEGIN
             -- ── Baseline thresholds for this file type ────────────────────────
             b.mean_entropy,
             b.threshold_sigma,
-            (b.mean_entropy + b.threshold_sigma)            AS anomaly_threshold,
+            (b.mean_entropy + 3.0 * b.threshold_sigma)       AS anomaly_threshold,
 
             (
                 SELECT s2.segment_id

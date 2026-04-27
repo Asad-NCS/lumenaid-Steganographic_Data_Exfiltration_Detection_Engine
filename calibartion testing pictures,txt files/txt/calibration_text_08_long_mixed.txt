@@ -1,0 +1,11 @@
+Calibration sample eight is deliberately longer and mixed-format. It starts as normal prose, then transitions into list-like structures and uneven line breaks to produce a broader textual footprint. The goal is to generate diverse token distributions and character frequency patterns for downstream tuning.
+
+- item_01: baseline narrative sentence with commas, pauses, and natural cadence.
+- item_02: compact technical fragment => payload_window=8192; variance=0.184; drift=minor.
+- item_03: seemingly random phrase: copper-owl / midnight-echo / frame-27.
+- item_04: repeated signatures: ABABCCDD, ABABCCDD, ABABCCDD.
+
+Finally, this sample ends with a dense tail section to increase size:
+q1w2e3r4t5y6u7i8o9p0
+mnbvcxzlkjhgfdsapoiuytrewq
+7788990011223344556677889900

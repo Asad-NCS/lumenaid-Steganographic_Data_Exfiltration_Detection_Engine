@@ -24,7 +24,7 @@ const css = `
 `;
 
 function entropyToColor(entropy, mean, sigma) {
-  const threshold = mean + sigma;
+  const threshold = mean + 3.0 * sigma;
   const lerp = (a, b, t) => a + (b - a) * Math.max(0, Math.min(1, t));
   let h, s, l;
   if (entropy <= mean) {
@@ -59,7 +59,7 @@ function Tag({ children, color = "#f59e0b" }) {
 
 function StatusDot({ status }) {
   const map = {
-    FLAGGED: "#ef4444", CLEAN: "#10b981",
+    FLAGGED: "#ef4444", CLEAN: "#10b981", SUSPICIOUS: "#f59e0b",
     PENDING: "#6b8099", SCANNING: "#3b82f6", ERROR: "#f97316",
   };
   const color = map[status?.toUpperCase()] || "#6b8099";
@@ -67,7 +67,7 @@ function StatusDot({ status }) {
     <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
       <span style={{
         width: 7, height: 7, borderRadius: "50%", background: color, flexShrink: 0,
-        boxShadow: status === "FLAGGED" ? `0 0 6px ${color}` : "none",
+        boxShadow: (status === "FLAGGED" || status === "SUSPICIOUS") ? `0 0 6px ${color}` : "none",
         animation: status === "SCANNING" ? "pulse 1.2s infinite" : "none",
       }} />
       <span style={{ fontSize: 12, color, fontWeight: 500 }}>{status}</span>
@@ -170,7 +170,7 @@ function FileTable({ files, selectedId, onSelect }) {
     <table style={{ width: "100%", borderCollapse: "collapse" }}>
       <thead>
         <tr style={{ borderBottom: "1px solid #141f2e" }}>
-          {["ID", "Filename", "Type", "Status", "Submitted"].map(h => (
+          {["Filename", "Type", "Threat", "Risk", "Submitted"].map(h => (
             <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: 10, color: "#2e4257", fontWeight: 600, letterSpacing: 1, textTransform: "uppercase", fontFamily: "'Space Mono', monospace" }}>
               {h}
             </th>
@@ -181,12 +181,28 @@ function FileTable({ files, selectedId, onSelect }) {
         {files.map(f => (
           <tr key={f.file_id} className="row-hover" onClick={() => onSelect(f.file_id)}
             style={{ borderBottom: "1px solid #0d1520", cursor: "pointer", background: f.file_id === selectedId ? "rgba(245,158,11,0.06)" : "transparent", transition: "background 0.15s" }}>
-            <td style={{ padding: "11px 12px" }}><Mono color="#2e4257">#{f.file_id}</Mono></td>
-            <td style={{ padding: "11px 12px", fontSize: 13, color: f.file_name ? "#c8d6e8" : "#2e4257", fontStyle: f.file_name ? "normal" : "italic" }}>
-              {f.file_name || "unnamed"}
+            <td style={{ padding: "11px 12px", fontSize: 13, color: "#c8d6e8" }}>
+              {f.file_name || `file_${f.file_id}`}
             </td>
             <td style={{ padding: "11px 12px" }}><Tag>{f.file_type}</Tag></td>
-            <td style={{ padding: "11px 12px" }}><StatusDot status={f.status} /></td>
+            <td style={{ padding: "11px 12px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                {(() => {
+                  const rawScore = Number(f.threat_score || 0);
+                  const normalizedScore = Math.max(0, Math.min(rawScore, 10));
+                  const danger = rawScore >= 6;
+                  return (
+                    <>
+                <div style={{ width: 40, height: 4, background: "#141f2e", borderRadius: 2 }}>
+                  <div style={{ height: "100%", width: `${normalizedScore * 10}%`, background: danger ? "#ef4444" : "#f59e0b", borderRadius: 2 }} />
+                </div>
+                <Mono color={danger ? "#ef4444" : "#f59e0b"}>{rawScore}/10</Mono>
+                    </>
+                  );
+                })()}
+              </div>
+            </td>
+            <td style={{ padding: "11px 12px" }}><StatusDot status={f.risk_level} /></td>
             <td style={{ padding: "11px 12px" }}><Mono>{new Date(f.submitted_at).toLocaleString()}</Mono></td>
           </tr>
         ))}
@@ -206,7 +222,7 @@ function EntropyHeatmap({ segments, baseline, onChunkClick }) {
         {[
           { color: "hsl(158,64%,22%)", label: "Low entropy" },
           { color: "hsl(43,95%,55%)", label: `Baseline (${mean.toFixed(2)})` },
-          { color: "hsl(0,88%,52%)", label: `Anomaly (>${(mean + sigma).toFixed(2)})` },
+          { color: "hsl(0,88%,52%)", label: `Anomaly (>${(mean + 3.0 * sigma).toFixed(2)})` },
         ].map(({ color, label }) => (
           <div key={label} style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <div style={{ width: 10, height: 10, borderRadius: 2, background: color }} />
@@ -244,11 +260,25 @@ function EntropyHeatmap({ segments, baseline, onChunkClick }) {
           fontFamily: "'Space Mono', monospace",
         }}>
           <div style={{ color: "#6b8099", marginBottom: 4 }}>seg #{tooltip.seg.segment_index}</div>
-          <div style={{ color: tooltip.isAnom ? "#ef4444" : "#10b981", fontWeight: 700, fontSize: 14 }}>
-            {tooltip.seg.entropy_score.toFixed(4)}
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+            <div>
+              <div style={{ fontSize: 9, color: "#4a6070", marginBottom: 2 }}>ENTROPY</div>
+              <div style={{ color: tooltip.isAnom ? "#ef4444" : "#10b981", fontWeight: 700, fontSize: 13 }}>
+                {tooltip.seg.entropy_score.toFixed(4)}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 9, color: "#4a6070", marginBottom: 2 }}>CHI-SQ</div>
+              <div style={{ 
+                color: (baseline && tooltip.seg.chi_square_score > (baseline.mean_chi + 3 * baseline.sigma_chi)) ? "#f59e0b" : "#6b8099", 
+                fontWeight: 700, fontSize: 13 
+              }}>
+                {tooltip.seg.chi_square_score.toFixed(2)}
+              </div>
+            </div>
           </div>
-          <div style={{ color: "#2e4257", marginTop: 4 }}>threshold {(tooltip.seg.entropy_score > 0 ? mean + sigma : 0).toFixed(4)}</div>
-          {tooltip.isAnom && <div style={{ color: "#ef4444", marginTop: 6 }}>ANOMALY</div>}
+          <div style={{ color: "#2e4257", marginTop: 6, fontSize: 10 }}>threshold {(tooltip.seg.entropy_score > 0 ? mean + sigma : 0).toFixed(2)}</div>
+          {tooltip.isAnom && <div style={{ color: "#ef4444", marginTop: 6, fontSize: 10, fontWeight: 700 }}>ANOMALY DETECTED</div>}
         </div>
       )}
     </div>
@@ -484,10 +514,13 @@ export default function Dashboard() {
   const [selectedId, setSelectedId] = useState(null);
   const [analysis, setAnalysis] = useState(null);
   const [loadingAna, setLoadingAna] = useState(false);
+  const [analysisError, setAnalysisError] = useState("");
   const [activeChunk, setActiveChunk] = useState(null);
   const [telemetry, setTelemetry] = useState([]);
+  const [showCalibrated, setShowCalibrated] = useState(false);
 
   const isAdmin = auth?.role === "admin";
+  const selectedFile = files.find(f => f.file_id === selectedId) || null;
 
   const fetchTelemetry = useCallback(async () => {
     if (!isAdmin) return;
@@ -508,9 +541,21 @@ export default function Dashboard() {
   }, []);
 
   const fetchAnalysis = useCallback(async (id) => {
-    setLoadingAna(true); setAnalysis(null);
-    try { const res = await fetch(`${API}/files/${id}/analysis`); setAnalysis(await res.json()); }
-    catch { } finally { setLoadingAna(false); }
+    setLoadingAna(true);
+    setAnalysis(null);
+    setAnalysisError("");
+    try {
+      const res = await fetch(`${API}/files/${id}/analysis`);
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || "Failed to load file analysis");
+      }
+      setAnalysis(data);
+    } catch (err) {
+      setAnalysisError(err.message || "Failed to load file analysis");
+    } finally {
+      setLoadingAna(false);
+    }
   }, []);
 
   useEffect(() => { 
@@ -587,8 +632,25 @@ export default function Dashboard() {
             </Panel>
 
             <Panel>
-              <PanelTitle>Scanned files</PanelTitle>
-              <FileTable files={files} selectedId={selectedId} onSelect={handleSelect} />
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                <PanelTitle>{showCalibrated ? "Reference Calibration Samples" : "Scanned files"}</PanelTitle>
+                <button 
+                  onClick={() => setShowCalibrated(!showCalibrated)}
+                  style={{
+                    background: "#08101a", border: "1px solid #141f2e",
+                    borderRadius: 6, padding: "6px 12px", color: showCalibrated ? "#f59e0b" : "#6b8099",
+                    fontSize: 10, fontFamily: "'Space Mono', monospace", cursor: "pointer",
+                    transition: "all 0.2s"
+                  }}
+                >
+                  {showCalibrated ? "VIEW TESTING FILES" : "VIEW CALIBRATED FILES"}
+                </button>
+              </div>
+              <FileTable 
+                files={files.filter(f => f.is_calibrated === showCalibrated)} 
+                selectedId={selectedId} 
+                onSelect={handleSelect} 
+              />
             </Panel>
 
             {analysis && !loadingAna && (
@@ -615,7 +677,7 @@ export default function Dashboard() {
                       {isFlagged ? "Threat Detected" : "File Clean"}
                     </div>
                     <div style={{ fontSize: 12, color: "#4a6070", marginTop: 2 }}>
-                      <Mono>file_id:{analysis.file_id}</Mono>
+                      <Mono>{selectedFile?.file_name || `file_${analysis.file_id}`}</Mono>
                       &nbsp;·&nbsp;<Tag>{analysis.file_type}</Tag>
                       &nbsp;·&nbsp;<Mono>{analysis.segments.length} segments</Mono>
                     </div>
@@ -627,6 +689,51 @@ export default function Dashboard() {
                     </div>
                   )}
                 </div>
+
+                {/* Signals Fired Breakdown */}
+                {analysis.signals_fired && (() => {
+                  const sf = analysis.signals_fired;
+                  const signals = [
+                    { key: "signal_1_entropy", label: "Shannon Entropy",       weight: "+3 pts", desc: "Randomness spike above baseline" },
+                    { key: "signal_2_chi",     label: "Chi-Square Dist.",      weight: "+3 pts", desc: "Byte DNA deviates from natural pattern" },
+                    { key: "signal_3_pattern", label: "Pattern Consistency",   weight: "+2 pts", desc: "Sustained anomaly run (3+ consecutive)" },
+                    { key: "signal_4_size",    label: "File Size Delta",       weight: "+2 pts", desc: "File larger than historical average" },
+                  ];
+                  return (
+                    <div style={{ marginBottom: 18 }}>
+                      <div style={{ fontSize: 10, color: "#2e4257", fontFamily: "'Space Mono', monospace", letterSpacing: 1, textTransform: "uppercase", marginBottom: 10 }}>Detection Signals</div>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                        {signals.map(sig => {
+                          const fired = sf[sig.key];
+                          return (
+                            <div key={sig.key} style={{
+                              display: "flex", alignItems: "center", gap: 10,
+                              padding: "10px 12px", borderRadius: 8,
+                              background: fired ? "rgba(239,68,68,0.06)" : "#08101a",
+                              border: `1px solid ${fired ? "#ef444330" : "#141f2e"}`,
+                            }}>
+                              <div style={{
+                                width: 22, height: 22, borderRadius: "50%", flexShrink: 0,
+                                background: fired ? "#ef444420" : "#141f2e",
+                                display: "flex", alignItems: "center", justifyContent: "center",
+                                fontSize: 12, fontWeight: 700,
+                                color: fired ? "#ef4444" : "#2e4257",
+                              }}>
+                                {fired ? "✓" : "–"}
+                              </div>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 11, color: fired ? "#e2eaf4" : "#4a6070", fontWeight: 500, marginBottom: 2 }}>{sig.label}</div>
+                                <div style={{ fontSize: 10, color: "#2e4257" }}>{sig.desc}</div>
+                              </div>
+                              <Mono color={fired ? "#ef4444" : "#2e4257"} size={10}>{fired ? sig.weight : "0 pts"}</Mono>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 <PanelTitle>Entropy Heatmap (Click segment for Hex Dump)</PanelTitle>
                 <EntropyHeatmap 
                   segments={analysis.segments} 
@@ -640,6 +747,13 @@ export default function Dashboard() {
               <Panel style={{ textAlign: "center", padding: "40px 0" }}>
                 <div style={{ width: 22, height: 22, border: "2px solid #141f2e", borderTop: "2px solid #f59e0b", borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 12px" }} />
                 <Mono color="#2e4257">loading analysis...</Mono>
+              </Panel>
+            )}
+
+            {!loadingAna && analysisError && (
+              <Panel style={{ textAlign: "center", padding: "20px 18px", borderTop: "2px solid #ef4444" }}>
+                <div style={{ fontSize: 13, color: "#ef4444", marginBottom: 6 }}>failed to load selected file analysis</div>
+                <Mono color="#6b8099">{analysisError}</Mono>
               </Panel>
             )}
           </div>

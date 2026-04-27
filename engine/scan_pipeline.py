@@ -186,7 +186,7 @@ class ScanPipeline:
                 cur.execute(
                     """
                     WITH baseline AS (
-                        SELECT mean_entropy + threshold_sigma AS threshold
+                        SELECT mean_entropy + 3.0 * threshold_sigma AS threshold
                         FROM baselines
                         WHERE file_type = %s
                         LIMIT 1

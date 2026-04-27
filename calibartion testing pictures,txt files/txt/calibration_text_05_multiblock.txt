@@ -1,0 +1,14 @@
+[block_A]
+user=sample_operator
+mode=passive_scan
+window_ms=250
+
+[block_B]
+log: upload started
+log: upload paused
+log: upload resumed
+log: upload complete
+
+[block_C]
+observation: regular image metadata often appears predictable,
+while covert channels may leave subtle distribution artifacts.

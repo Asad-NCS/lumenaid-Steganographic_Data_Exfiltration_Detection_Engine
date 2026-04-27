@@ -18,30 +18,40 @@ class LumenEngine:
 
     def _compute_entropy(self, chunk: bytes) -> float:
         #computes_H = -sum(p_i * log2(p_i)) for all byte values 0-255 in the chunk.
-        #if chunk is empty we return 0.0 to avoid division by zero downstream.
         if not chunk:
             return 0.0
-
         total_bytes = len(chunk)
+        freq = [0] * 256
+        for byte in chunk: freq[byte] += 1
+        entropy = 0.0
+        for count in freq:
+            if count == 0: continue
+            p_i = count / total_bytes
+            entropy -= p_i * math.log2(p_i)
+        return entropy
 
-        #count_frequency of each byte value (0-255)
+    def _compute_chi_square(self, chunk: bytes) -> float:
+        #computes_the chi-square statistic against a uniform distribution.
+        #X2 = sum((observed - expected)^2 / expected)
+        if not chunk:
+            return 0.0
+        
+        total_bytes = len(chunk)
+        expected = total_bytes / 256.0 #uniform distribution assumption
+        
         freq = [0] * 256
         for byte in chunk:
             freq[byte] += 1
-
-        #apply_shannon formula
-        entropy = 0.0
+            
+        chi_square = 0.0
         for count in freq:
-            if count == 0:
-                continue #log2(0) is undefined, skip — contributes 0 to sum
-            p_i = count / total_bytes
-            entropy -= p_i * math.log2(p_i)
-
-        return entropy
+            chi_square += ((count - expected) ** 2) / expected
+            
+        return chi_square
 
     def analyze(self) -> List[Dict]:
         #reads_the file in binary mode, chunks it, and returns analysis results.
-        #each_dict has: segment_index (int), entropy_score (float), raw_bytes (bytes)
+        #each_dict has: segment_index (int), entropy_score (float), chi_square (float), raw_bytes (bytes)
         results = []
 
         with open(self.file_path, "rb") as f:
@@ -52,10 +62,12 @@ class LumenEngine:
                     break #eof
 
                 entropy_score = self._compute_entropy(chunk)
+                chi_score     = self._compute_chi_square(chunk)
 
                 results.append({
                     "segment_index": segment_index,
                     "entropy_score": round(entropy_score, 6),
+                    "chi_square_score": round(chi_score, 4),
                     "raw_bytes": chunk,
                 })
 

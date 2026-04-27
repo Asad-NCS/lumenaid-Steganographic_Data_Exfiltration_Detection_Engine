@@ -7,49 +7,76 @@
 
 ---
 
-## Project Overview
-LumenAid is a hybrid relational and non-relational database-centric detection engine. It analyses files for hidden steganographic data by calculating Shannon Entropy on raw binary chunks, storing the metadata in PostgreSQL and raw binaries in MongoDB. The anomaly detection logic is driven entirely by **PL/pgSQL triggers and stored procedures**.
+## 🚀 Project Overview
+LumenAid is an advanced, hybrid database-centric detection engine designed to identify steganographic data exfiltration. It combines the structured analytical power of **PostgreSQL** with the high-performance binary storage of **MongoDB** to provide a multi-signal threat intelligence platform.
 
-## Execution Guide (Setup Instructions)
+### 🛡️ The 4-Signal Detection System
+Unlike basic detectors, LumenAid uses four distinct statistical signals to verify file integrity:
+1.  **Signal 1: Shannon Entropy Density** — Detects randomness spikes in binary chunks (Statement-level Trigger).
+2.  **Signal 2: Chi-Square Distribution** — Identifies "Byte DNA" deviations from natural file-type patterns.
+3.  **Signal 3: Pattern Consistency** — Detects sustained injection runs using complex SQL Window Functions.
+4.  **Signal 4: File Size Delta** — Flags suspicious bloat relative to historical file-type averages.
+
+---
+
+## 🛠️ Execution Guide
 
 ### Prerequisites
-1. **PostgreSQL** (Running on default port `5432`)
-2. **MongoDB** (Running on default port `27017`)
+1. **PostgreSQL** (Port `5432`)
+2. **MongoDB** (Port `27017`)
 3. **Python 3.10+**
 4. **Node.js (v18+)**
 
-### 1. Database Setup
-Ensure PostgreSQL and MongoDB are running. The FastAPI backend will automatically run the schema and seed scripts (`db/schema_migration.sql` and `db/seed_data.sql`) during startup if the database doesn't exist or isn't populated.
+### ⚡ One-Click Launch (Recommended for Windows)
+Simply run the orchestrator script from the project root:
+```bash
+./run_project.bat
+```
+*This will automatically launch the Backend and the Frontend in their own windows.*
 
-### 2. Backend Setup (FastAPI + Engine)
-1. Navigate to the project root directory.
-2. Install Python dependencies:
+### 1. Database Initialization
+Ensure your Postgres and Mongo instances are running. The system will automatically migrate the schema upon first backend startup.
+
+### 2. System Calibration (Crucial Step)
+Before running tests, you must calibrate the engine to your environment's "Normal" baseline using the 40 provided samples.
+1. Navigate to the project root.
+2. Run the calibration script:
+   ```bash
+   python bulk_calibrate.py
+   ```
+   *This script wipes the DB, scans the reference samples, and calculates the **3-Sigma Statistical Baseline** for all 4 signals.*
+
+### 3. Backend Setup (FastAPI)
+1. Install Python dependencies:
    ```bash
    pip install -r requirements.txt
    ```
-3. Start the FastAPI server (it runs on port `8000` by default):
+2. Start the FastAPI server:
    ```bash
    uvicorn api.main:app --reload --port 8000
    ```
 
-### 3. Frontend Setup (React Dashboard)
-1. Open a new terminal and navigate to the `dashboard` directory:
+### 4. Frontend Setup (React Dashboard)
+1. Navigate to the `dashboard` directory:
    ```bash
    cd dashboard
-   ```
-2. Install npm dependencies:
-   ```bash
    npm install
-   ```
-3. Start the React development server:
-   ```bash
    npm start
    ```
-   The dashboard will automatically open at `http://localhost:3000`.
+2. The dashboard will open at `http://localhost:3000`.
 
-### 4. Testing the Engine
-1. Go to `http://localhost:3000` in your browser.
-2. Drag and drop any file (e.g., an EXE or a text file) into the upload zone.
-3. The file will be ingested, chunked by the Python engine, and persisted to both MongoDB and PostgreSQL.
-4. **PostgreSQL Triggers** (`fn_detect_entropy_anomalies`) will automatically detect anomalies against the threshold baselines and flag the file if suspicious!
-5. Click on the uploaded file in the dashboard to see the full Entropy Heatmap and any resulting threat alerts.
+---
+
+## 🔬 Testing Workflow
+1. **Login**: Use the admin portal to access the command center.
+2. **View Baselines**: Toggle **"VIEW CALIBRATED FILES"** to verify the 40 clean samples.
+3. **Scan Test**: Upload a clean file. It should return **CLEAN (0/10)**.
+4. **Attack Test**: Use `steghide` or similar tools to hide data in a file and upload it.
+5. **Analyze**: Use the **Entropy Heatmap** and **Hex Dump Modal** to isolate the exact segments where the payload is hidden.
+
+---
+
+## 🏛️ Technical Architecture
+- **Database Logic**: Entirely driven by PL/pgSQL triggers (`fn_analyze_segment_multi_signal`) for real-time threat scoring.
+- **Hybrid Storage**: PostgreSQL handles the relational metadata and threat scores; MongoDB stores raw 4KB binary shards with GridFS-style referencing.
+- **Analytics**: Materialized views (`vw_smoothed_anomalies`) provide smoothed trend analysis for the dashboard metrics.

@@ -12,7 +12,7 @@ SELECT
         ROWS BETWEEN 2 PRECEDING AND 2 FOLLOWING
     )                                                            AS smoothed_entropy,
     b.mean_entropy,
-    (b.mean_entropy + b.threshold_sigma)                         AS anomaly_threshold,
+    (b.mean_entropy + 3.0 * b.threshold_sigma)                    AS anomaly_threshold,
     ROUND(
         AVG(s.entropy_score) OVER (
             PARTITION BY s.file_id
@@ -26,26 +26,26 @@ SELECT
             PARTITION BY s.file_id
             ORDER BY s.segment_index
             ROWS BETWEEN 2 PRECEDING AND 2 FOLLOWING
-        ) > (b.mean_entropy + b.threshold_sigma)
+        ) > (b.mean_entropy + 3.0 * b.threshold_sigma)
         THEN TRUE
         ELSE FALSE
     END                                                          AS is_anomalous,
     CASE
-        WHEN s.entropy_score > (b.mean_entropy + (1.5 * b.threshold_sigma)) THEN 3
+        WHEN s.entropy_score > (b.mean_entropy + 3.0 * b.threshold_sigma) THEN 3
         ELSE 0
     END                                                          AS entropy_signal_score,
     CASE
-        WHEN COALESCE(s.chi_square_score, 0) > 50.0 THEN 3
+        WHEN COALESCE(s.chi_square_score, 0) > (COALESCE(b.mean_chi,0) + 3.0 * COALESCE(b.sigma_chi,0)) THEN 3
         ELSE 0
     END                                                          AS chi_signal_score,
     (
         CASE
-            WHEN s.entropy_score > (b.mean_entropy + (1.5 * b.threshold_sigma)) THEN 3
+            WHEN s.entropy_score > (b.mean_entropy + 3.0 * b.threshold_sigma) THEN 3
             ELSE 0
         END
         +
         CASE
-            WHEN COALESCE(s.chi_square_score, 0) > 50.0 THEN 3
+            WHEN COALESCE(s.chi_square_score, 0) > (COALESCE(b.mean_chi,0) + 3.0 * COALESCE(b.sigma_chi,0)) THEN 3
             ELSE 0
         END
     )                                                    AS segment_score_contribution,
