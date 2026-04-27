@@ -1,5 +1,7 @@
 import psycopg2
-PG_DSN = "host=localhost dbname=lumenaid user=postgres password=3568"
+import os
+
+PG_DSN = f"host=localhost dbname=lumenaid user=postgres password={os.getenv('PGPASSWORD', '3568')}"
 
 SQL = """
 ALTER TABLE files ADD COLUMN IF NOT EXISTS file_size BIGINT DEFAULT 0;

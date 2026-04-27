@@ -36,7 +36,7 @@ This is the recommended path for Windows.
    .\run_project.bat
    ```
 
-The launcher will try to start MongoDB if needed, then open the backend and dashboard in separate windows.
+The launcher now keeps everything in one console window and writes service logs to the `logs` folder.
 
 ## If Auto-Start Fails
 If the batch file cannot find MongoDB or your machine uses custom paths, use the manual fallback below.

@@ -38,3 +38,15 @@ yarn-error.log*
 dashboard/node_modules/
 dashboard/build/
 dashboard/dist/
+.mongo-data/
+**/mongod.lock
+**/WiredTiger*
+**/_mdb_catalog.wt
+**/collection-*.wt
+**/index-*.wt
+**/sizeStorer.wt
+**/storage.bson
+**/metrics*
+**/*.stackdump
+mongo_log.txt
+tools/steghide/

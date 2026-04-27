@@ -193,10 +193,10 @@ function FileTable({ files, selectedId, onSelect }) {
                   const danger = rawScore >= 6;
                   return (
                     <>
-                <div style={{ width: 40, height: 4, background: "#141f2e", borderRadius: 2 }}>
-                  <div style={{ height: "100%", width: `${normalizedScore * 10}%`, background: danger ? "#ef4444" : "#f59e0b", borderRadius: 2 }} />
-                </div>
-                <Mono color={danger ? "#ef4444" : "#f59e0b"}>{rawScore}/10</Mono>
+                      <div style={{ width: 40, height: 4, background: "#141f2e", borderRadius: 2 }}>
+                        <div style={{ height: "100%", width: `${normalizedScore * 10}%`, background: danger ? "#ef4444" : "#f59e0b", borderRadius: 2 }} />
+                      </div>
+                      <Mono color={danger ? "#ef4444" : "#f59e0b"}>{rawScore}/10</Mono>
                     </>
                   );
                 })()}
@@ -269,9 +269,9 @@ function EntropyHeatmap({ segments, baseline, onChunkClick }) {
             </div>
             <div>
               <div style={{ fontSize: 9, color: "#4a6070", marginBottom: 2 }}>CHI-SQ</div>
-              <div style={{ 
-                color: (baseline && tooltip.seg.chi_square_score > (baseline.mean_chi + 3 * baseline.sigma_chi)) ? "#f59e0b" : "#6b8099", 
-                fontWeight: 700, fontSize: 13 
+              <div style={{
+                color: (baseline && tooltip.seg.chi_square_score > (baseline.mean_chi + 3 * baseline.sigma_chi)) ? "#f59e0b" : "#6b8099",
+                fontWeight: 700, fontSize: 13
               }}>
                 {tooltip.seg.chi_square_score.toFixed(2)}
               </div>
@@ -358,19 +358,19 @@ function LoginScreen({ onLogin }) {
     <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#060910" }}>
       <div style={{ width: 400, padding: 40, background: "#0b1019", border: "1px solid #141f2e", borderRadius: 16, boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.5)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 32, justifyContent: "center" }}>
-            <div style={{ width: 38, height: 38, borderRadius: 8, background: "#f59e0b", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#060910" strokeWidth="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>
-            </div>
-            <div style={{ fontSize: 24, fontWeight: 600, color: "#e2eaf4", letterSpacing: -0.5 }}>LumenAid</div>
+          <div style={{ width: 38, height: 38, borderRadius: 8, background: "#f59e0b", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#060910" strokeWidth="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>
+          </div>
+          <div style={{ fontSize: 24, fontWeight: 600, color: "#e2eaf4", letterSpacing: -0.5 }}>LumenAid</div>
         </div>
         <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           <div>
             <label style={{ fontSize: 11, color: "#4a6070", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6, display: "block" }}>Username</label>
-            <input type="text" className="login-input" value={username} onChange={e=>setUsername(e.target.value)} />
+            <input type="text" className="login-input" value={username} onChange={e => setUsername(e.target.value)} />
           </div>
           <div>
             <label style={{ fontSize: 11, color: "#4a6070", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6, display: "block" }}>Password</label>
-            <input type="password" className="login-input" value={password} onChange={e=>setPassword(e.target.value)} />
+            <input type="password" className="login-input" value={password} onChange={e => setPassword(e.target.value)} />
           </div>
           {error && <div style={{ color: "#ef4444", fontSize: 13, background: "rgba(239,68,68,0.1)", padding: 10, borderRadius: 6, border: "1px solid #ef444430" }}>{error}</div>}
           <button type="submit" disabled={loading} style={{ background: "#f59e0b", color: "#060910", padding: "14px 16px", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: loading ? "default" : "pointer", marginTop: 8 }}>
@@ -398,7 +398,7 @@ function HexDumpModal({ chunk, onClose }) {
   }, [chunk]);
 
   const Tab = ({ id, label }) => (
-    <button 
+    <button
       onClick={() => setActiveTab(id)}
       style={{
         padding: "8px 16px", border: "none", background: "transparent",
@@ -425,7 +425,7 @@ function HexDumpModal({ chunk, onClose }) {
           </div>
           <button onClick={onClose} style={{ background: "transparent", border: "none", color: "#4a6070", cursor: "pointer", fontSize: 20 }}>&times;</button>
         </div>
-        
+
         <div style={{ padding: 20, overflow: "auto", background: "#060910", flex: 1, display: "flex", flexDirection: "column" }}>
           {loading ? (
             <Mono color="#2e4257">Decompiling MongoDB shard...</Mono>
@@ -437,10 +437,10 @@ function HexDumpModal({ chunk, onClose }) {
                   <div style={{ padding: 16, background: "#0b1019", borderRadius: 8, border: "1px solid #141f2e" }}>
                     <div style={{ fontSize: 10, color: "#4a6070", marginBottom: 8, textTransform: "uppercase" }}>Entropy Density</div>
                     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                       <div style={{ flex: 1, height: 6, background: "#141f2e", borderRadius: 3, overflow: "hidden" }}>
-                          <div style={{ height: "100%", width: `${(data.entropy / 8) * 100}%`, background: data.is_suspicious ? "#ef4444" : "#10b981" }} />
-                       </div>
-                       <Mono color={data.is_suspicious ? "#ef4444" : "#10b981"} size={14}>{data.entropy}</Mono>
+                      <div style={{ flex: 1, height: 6, background: "#141f2e", borderRadius: 3, overflow: "hidden" }}>
+                        <div style={{ height: "100%", width: `${(data.entropy / 8) * 100}%`, background: data.is_suspicious ? "#ef4444" : "#10b981" }} />
+                      </div>
+                      <Mono color={data.is_suspicious ? "#ef4444" : "#10b981"} size={14}>{data.entropy}</Mono>
                     </div>
                   </div>
                   <div style={{ padding: 16, background: "#0b1019", borderRadius: 8, border: "1px solid #141f2e" }}>
@@ -462,10 +462,10 @@ function HexDumpModal({ chunk, onClose }) {
                 </div>
 
                 <div style={{ marginTop: "auto", padding: 12, background: "rgba(245,158,11,0.03)", border: "1px dashed #f59e0b40", borderRadius: 8 }}>
-                   <div style={{ fontSize: 12, color: "#f59e0b", marginBottom: 4, fontWeight: 600 }}>💡 Analyst Tip</div>
-                   <div style={{ fontSize: 11, color: "#6b8099", lineHeight: 1.4 }}>
-                     This segment has been isolated because its entropy signature deviates from the file's baseline. Switch to the <b>Raw Payload</b> tab to inspect the bytecode for hidden exfiltration patterns.
-                   </div>
+                  <div style={{ fontSize: 12, color: "#f59e0b", marginBottom: 4, fontWeight: 600 }}>💡 Analyst Tip</div>
+                  <div style={{ fontSize: 11, color: "#6b8099", lineHeight: 1.4 }}>
+                    This segment has been isolated because its entropy signature deviates from the file's baseline. Switch to the <b>Raw Payload</b> tab to inspect the bytecode for hidden exfiltration patterns.
+                  </div>
                 </div>
               </div>
             ) : (
@@ -558,8 +558,8 @@ export default function Dashboard() {
     }
   }, []);
 
-  useEffect(() => { 
-    fetchFiles(); 
+  useEffect(() => {
+    fetchFiles();
     if (isAdmin) {
       fetchTelemetry();
       const interval = setInterval(fetchTelemetry, 10000);
@@ -601,10 +601,10 @@ export default function Dashboard() {
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <div onClick={handleLogout} style={{ cursor: "pointer", padding: "6px 14px", background: "#0b1019", border: "1px solid #141f2e", borderRadius: 20, display: "flex", alignItems: "center", gap: 8 }}>
-               <Mono color="#e2eaf4">{auth.username}</Mono>
-               <Tag color="#4a6070">{auth.role}</Tag>
-               <div style={{ width: 1, height: 10, background: "#141f2e" }} />
-               <Mono color="#ef4444" size={10}>LOGOUT</Mono>
+              <Mono color="#e2eaf4">{auth.username}</Mono>
+              <Tag color="#4a6070">{auth.role}</Tag>
+              <div style={{ width: 1, height: 10, background: "#141f2e" }} />
+              <Mono color="#ef4444" size={10}>LOGOUT</Mono>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 14px", background: "#0b1019", border: "1px solid #141f2e", borderRadius: 20 }}>
               <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#10b981" }} />
@@ -634,7 +634,7 @@ export default function Dashboard() {
             <Panel>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
                 <PanelTitle>{showCalibrated ? "Reference Calibration Samples" : "Scanned files"}</PanelTitle>
-                <button 
+                <button
                   onClick={() => setShowCalibrated(!showCalibrated)}
                   style={{
                     background: "#08101a", border: "1px solid #141f2e",
@@ -646,10 +646,10 @@ export default function Dashboard() {
                   {showCalibrated ? "VIEW TESTING FILES" : "VIEW CALIBRATED FILES"}
                 </button>
               </div>
-              <FileTable 
-                files={files.filter(f => f.is_calibrated === showCalibrated)} 
-                selectedId={selectedId} 
-                onSelect={handleSelect} 
+              <FileTable
+                files={files.filter(f => f.is_calibrated === showCalibrated)}
+                selectedId={selectedId}
+                onSelect={handleSelect}
               />
             </Panel>
 
@@ -694,10 +694,10 @@ export default function Dashboard() {
                 {analysis.signals_fired && (() => {
                   const sf = analysis.signals_fired;
                   const signals = [
-                    { key: "signal_1_entropy", label: "Shannon Entropy",       weight: "+3 pts", desc: "Randomness spike above baseline" },
-                    { key: "signal_2_chi",     label: "Chi-Square Dist.",      weight: "+3 pts", desc: "Byte DNA deviates from natural pattern" },
-                    { key: "signal_3_pattern", label: "Pattern Consistency",   weight: "+2 pts", desc: "Sustained anomaly run (3+ consecutive)" },
-                    { key: "signal_4_size",    label: "File Size Delta",       weight: "+2 pts", desc: "File larger than historical average" },
+                    { key: "signal_1_entropy", label: "Shannon Entropy", weight: "+3 pts", desc: "Randomness spike above baseline" },
+                    { key: "signal_2_chi", label: "Chi-Square Dist.", weight: "+3 pts", desc: "Byte DNA deviates from natural pattern" },
+                    { key: "signal_3_pattern", label: "Pattern Consistency", weight: "+2 pts", desc: "Sustained anomaly run (3+ consecutive)" },
+                    { key: "signal_4_size", label: "File Size Delta", weight: "+2 pts", desc: "File larger than historical average" },
                   ];
                   return (
                     <div style={{ marginBottom: 18 }}>
@@ -735,9 +735,9 @@ export default function Dashboard() {
                 })()}
 
                 <PanelTitle>Entropy Heatmap (Click segment for Hex Dump)</PanelTitle>
-                <EntropyHeatmap 
-                  segments={analysis.segments} 
-                  baseline={analysis.baseline} 
+                <EntropyHeatmap
+                  segments={analysis.segments}
+                  baseline={analysis.baseline}
                   onChunkClick={(seg) => setActiveChunk(seg)}
                 />
               </Panel>

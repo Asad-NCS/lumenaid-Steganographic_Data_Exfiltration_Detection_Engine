@@ -1,7 +1,7 @@
 import psycopg2
 import os
 
-PG_DSN = "host=localhost dbname=lumenaid user=postgres password=3568"
+PG_DSN = f"host=localhost dbname=lumenaid user=postgres password={os.getenv('PGPASSWORD', '3568')}"
 
 SQL = """
 -- 1. Schema Upgrades

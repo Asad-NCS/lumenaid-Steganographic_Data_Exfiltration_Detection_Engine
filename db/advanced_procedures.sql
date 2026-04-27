@@ -46,3 +46,20 @@ BEGIN
     END IF;
 END;
 $$;
+
+
+-- Auto-refresh materialized view when files are scanned
+CREATE OR REPLACE FUNCTION fn_refresh_mv_threat_analytics()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Refresh the materialized view (non-concurrently because we are in a trigger)
+    REFRESH MATERIALIZED VIEW mv_threat_analytics;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS tg_refresh_analytics ON files;
+CREATE TRIGGER tg_refresh_analytics
+    AFTER UPDATE OF status ON files
+    FOR EACH STATEMENT
+    EXECUTE FUNCTION fn_refresh_mv_threat_analytics();

@@ -45,7 +45,7 @@ from engine.scan_pipeline import ScanPipeline
 
 # Configuration — read from environment with sane defaults for local dev
 
-PG_DSN        = os.getenv("LUMENAID_PG_DSN",       "host=localhost dbname=lumenaid user=postgres password=3568")
+PG_DSN        = os.getenv("LUMENAID_PG_DSN",       f"host=localhost dbname=lumenaid user=postgres password={os.getenv('PGPASSWORD', '3568')}")
 MONGO_URI     = os.getenv("LUMENAID_MONGO_URI",    "mongodb://localhost:27017")
 MONGO_DB      = os.getenv("LUMENAID_MONGO_DB",     "lumenaid")
 DEFAULT_USER  = int(os.getenv("LUMENAID_DEFAULT_USER", "1"))
@@ -63,6 +63,7 @@ _db_manager: Optional[DatabaseManager] = None
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 def ensure_database_and_schema():
+    print("[*] Starting Database Schema Check...")
     # Parse DSN (assuming simple key=value format)
     dsn_parts = dict(part.split('=') for part in PG_DSN.split())
     target_db = dsn_parts.get('dbname', 'lumenaid')
@@ -88,6 +89,7 @@ def ensure_database_and_schema():
 
     # Now connect to the actual database and run schema_migration.sql
     try:
+        print(f"[*] Connecting to PostgreSQL at {PG_DSN}...")
         conn = psycopg2.connect(PG_DSN)
         with conn.cursor() as cur:
             schema_path = os.path.join(os.path.dirname(__file__), '..', 'db', 'schema_migration.sql')
@@ -122,11 +124,13 @@ async def lifespan(app: FastAPI):
     
     #open_database connections once at startup; close cleanly on shutdown.
     global _db_manager
+    print("[*] Initializing Database Manager (MongoDB + PG)...")
     _db_manager = DatabaseManager(
         pg_dsn=PG_DSN,
         mongo_uri=MONGO_URI,
         mongo_db_name=MONGO_DB,
     )
+    print("[*] Database Manager initialized.")
     yield
     if _db_manager is not None:
         _db_manager.close()
@@ -315,7 +319,8 @@ def get_chunk_hex(chunk_id: str):
             file_type = context["file_type"]
 
         # Smart multi-signal suspicion check
-        is_suspicious = (entropy > threshold) or (float(context.get("chi_square_score") or 0) > chi_threshold and float(context.get("chi_square_score") or 0) > 5.0)
+        chi_score = float((context or {}).get("chi_square_score") or 0)
+        is_suspicious = (entropy > threshold) or (chi_score > chi_threshold and chi_score > 5.0)
 
         if is_suspicious:
             reason = "Entropy" if entropy > threshold else "Chi-Square"

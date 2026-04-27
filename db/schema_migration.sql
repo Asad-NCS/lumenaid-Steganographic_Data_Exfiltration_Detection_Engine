@@ -30,13 +30,15 @@ CREATE TABLE IF NOT EXISTS files (
                         CHECK (status IN ('PENDING', 'SCANNING', 'CLEAN', 'FLAGGED', 'ERROR')),
     threat_score    INTEGER      NOT NULL DEFAULT 0,
     risk_level      VARCHAR(20)  NOT NULL DEFAULT 'CLEAN',
+    is_calibrated   BOOLEAN      NOT NULL DEFAULT FALSE,
     submitted_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_files_user_id   ON files(user_id);
-CREATE INDEX IF NOT EXISTS idx_files_status    ON files(status);
-CREATE INDEX IF NOT EXISTS idx_files_file_type ON files(file_type);
+CREATE INDEX IF NOT EXISTS idx_files_user_id       ON files(user_id);
+CREATE INDEX IF NOT EXISTS idx_files_status        ON files(status);
+CREATE INDEX IF NOT EXISTS idx_files_file_type     ON files(file_type);
+CREATE INDEX IF NOT EXISTS idx_files_is_calibrated ON files(is_calibrated);
 
 CREATE TABLE IF NOT EXISTS segments (
     segment_id       SERIAL        PRIMARY KEY,
@@ -56,16 +58,18 @@ CREATE INDEX IF NOT EXISTS idx_segments_file_id       ON segments(file_id);
 CREATE INDEX IF NOT EXISTS idx_segments_entropy_score ON segments(entropy_score);
 
 CREATE TABLE IF NOT EXISTS baselines (
-    baseline_id           SERIAL       PRIMARY KEY,
-    file_type             VARCHAR(20)  NOT NULL UNIQUE
+    baseline_id           SERIAL        PRIMARY KEY,
+    file_type             VARCHAR(20)   NOT NULL UNIQUE
                               REFERENCES file_type_registry(type_code),
-    mean_entropy          NUMERIC(6,4) NOT NULL
+    mean_entropy          NUMERIC(6,4)  NOT NULL
                               CHECK (mean_entropy >= 0 AND mean_entropy <= 8),
-    threshold_sigma       NUMERIC(6,4) NOT NULL
+    threshold_sigma       NUMERIC(6,4)  NOT NULL
                               CHECK (threshold_sigma > 0),
-    avg_file_size         BIGINT       NOT NULL DEFAULT 0,
-    expected_distribution JSONB        NOT NULL DEFAULT '{}',
-    updated_at            TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+    mean_chi              NUMERIC(10,4) NOT NULL DEFAULT 0,
+    sigma_chi             NUMERIC(10,4) NOT NULL DEFAULT 1,
+    avg_file_size         BIGINT        NOT NULL DEFAULT 0,
+    expected_distribution JSONB         NOT NULL DEFAULT '{}',
+    updated_at            TIMESTAMPTZ   NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS alerts (
@@ -164,14 +168,15 @@ DECLARE
     v_avg_size BIGINT;
 BEGIN
     IF NEW.status != OLD.status AND NEW.status IN ('CLEAN', 'FLAGGED') THEN
-        SELECT avg_file_size INTO v_avg_size
-        FROM baselines WHERE file_type = NEW.file_type;
+        SELECT AVG(file_size) INTO v_avg_size
+        FROM files
+        WHERE file_type = NEW.file_type AND is_calibrated = TRUE;
 
         IF v_avg_size > 0 AND NEW.file_size > (v_avg_size * 1.2) THEN
             INSERT INTO alerts (file_id, severity, description)
             VALUES (
                 NEW.file_id, 'LOW',
-                format('Signal 4 — File size anomaly: %s bytes vs avg %s bytes', NEW.file_size, v_avg_size)
+                format('Signal 4 — File size anomaly: %s bytes vs calibrated avg %s bytes', NEW.file_size, v_avg_size)
             );
             UPDATE files SET threat_score = threat_score + 2 WHERE file_id = NEW.file_id;
         END IF;
@@ -187,10 +192,7 @@ CREATE TRIGGER tg_finalize_file
     WHEN (OLD.status = 'PENDING' AND NEW.status != 'PENDING')
     EXECUTE FUNCTION fn_finalize_file_threat();
 
--- Remove duplicate row-level trigger if it exists
 DROP TRIGGER IF EXISTS tg_analyze_segment ON segments;
-
--- Main entropy anomaly detection (statement-level — the correct approach)
 DROP TRIGGER IF EXISTS entropy_anomaly_trigger ON segments;
 
 CREATE OR REPLACE FUNCTION fn_detect_entropy_anomalies()
@@ -204,10 +206,14 @@ BEGIN
         SELECT
             ins.file_id,
             f.file_type,
-            MAX(ins.entropy_score)                          AS max_entropy,
+            MAX(ins.entropy_score)                              AS max_entropy,
+            MAX(ins.chi_square_score)                           AS max_chi,
             b.mean_entropy,
             b.threshold_sigma,
-            (b.mean_entropy + 3.0 * b.threshold_sigma)            AS anomaly_threshold,
+            b.mean_chi,
+            b.sigma_chi,
+            (b.mean_entropy + 3.0 * b.threshold_sigma)         AS anomaly_threshold,
+            (COALESCE(b.mean_chi, 0) + 3.0 * COALESCE(b.sigma_chi, 1)) AS chi_threshold,
             (
                 SELECT s2.segment_id FROM segments s2
                 WHERE s2.file_id = ins.file_id
@@ -217,62 +223,49 @@ BEGIN
                       ORDER BY s3.entropy_score DESC LIMIT 1
                   )
                 LIMIT 1
-            )                                               AS worst_segment_id,
+            )                                                   AS worst_segment_id,
             (
                 SELECT s4.segment_index FROM inserted_rows s4
                 WHERE s4.file_id = ins.file_id
                 ORDER BY s4.entropy_score DESC LIMIT 1
-            )                                               AS worst_segment_index,
+            )                                                   AS worst_segment_index,
             (
                 SELECT s5.entropy_score FROM inserted_rows s5
                 WHERE s5.file_id = ins.file_id
                 ORDER BY s5.entropy_score DESC LIMIT 1
-            )                                               AS worst_entropy_score
+            )                                                   AS worst_entropy_score
         FROM inserted_rows ins
         JOIN files     f ON f.file_id   = ins.file_id
         JOIN baselines b ON b.file_type = f.file_type
-        GROUP BY ins.file_id, f.file_type, b.mean_entropy, b.threshold_sigma
+        GROUP BY ins.file_id, f.file_type, b.mean_entropy, b.threshold_sigma, b.mean_chi, b.sigma_chi
     LOOP
-        IF r.max_entropy > r.anomaly_threshold THEN
+        IF r.max_entropy > r.anomaly_threshold OR (r.max_chi > r.chi_threshold AND r.max_chi > 5.0) THEN
             INSERT INTO alerts (file_id, segment_id, severity, entropy_score, description)
             VALUES (
-                r.file_id, r.worst_segment_id,
-                CASE
-                    WHEN r.worst_entropy_score > r.anomaly_threshold + 1.0 THEN 'CRITICAL'
-                    WHEN r.worst_entropy_score > r.anomaly_threshold + 0.5 THEN 'HIGH'
-                    ELSE 'MEDIUM'
-                END,
+                r.file_id, r.worst_segment_id, 'HIGH',
                 r.worst_entropy_score,
-                'High Entropy Detected in Segment '
-                    || r.worst_segment_index::TEXT
-                    || ' (file_id='   || r.file_id::TEXT
-                    || ', score='     || r.worst_entropy_score::TEXT
-                    || ', threshold=' || r.anomaly_threshold::TEXT
-                    || ', type='      || r.file_type || ')'
+                format('Multi-signal detection in segment %s. Entropy: %s (limit %s)',
+                       r.worst_segment_index, round(r.worst_entropy_score, 2), round(r.anomaly_threshold, 2))
             );
-
             UPDATE files
-            SET    threat_score = threat_score + 3,
-                    status       = CASE
-                        WHEN (threat_score + 3) >= 6 THEN 'FLAGGED'
-                        WHEN (threat_score + 3) >= 3 THEN 'FLAGGED'
-                        ELSE 'CLEAN'
-                    END,
-                    risk_level   = CASE
-                        WHEN (threat_score + 3) >= 6 THEN 'FLAGGED'
-                        WHEN (threat_score + 3) >= 3 THEN 'SUSPICIOUS'
-                        ELSE 'CLEAN'
-                    END,
-                    updated_at   = NOW()
+            SET    status       = 'FLAGGED',
+                   threat_score = threat_score + 3,
+                   risk_level   = CASE
+                       WHEN threat_score + 3 >= 6 THEN 'FLAGGED'
+                       WHEN threat_score + 3 >= 3 THEN 'SUSPICIOUS'
+                       ELSE 'CLEAN'
+                   END,
+                   updated_at   = NOW()
             WHERE  file_id = r.file_id;
-
         ELSE
+            -- Only downgrade to CLEAN if NO other signals have flagged it yet
             UPDATE files
             SET    status     = 'CLEAN',
                    risk_level = 'CLEAN',
                    updated_at = NOW()
             WHERE  file_id    = r.file_id
-              AND  status    <> 'FLAGGED';
+              AND  status     = 'PENDING'
+              AND  threat_score = 0;
         END IF;
     END LOOP;
     RETURN NULL;
