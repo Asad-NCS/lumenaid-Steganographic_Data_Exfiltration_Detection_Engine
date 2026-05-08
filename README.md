@@ -1,103 +1,81 @@
 # LumenAid - Steganographic Data Exfiltration Detection Engine
 
 ## Overview
-LumenAid is a hybrid detection platform for steganographic data exfiltration. It uses PostgreSQL for structured metadata and MongoDB for raw binary storage, with a four-signal scoring pipeline to flag suspicious files.
+LumenAid is a high-performance detection platform designed to identify steganographic data exfiltration through advanced statistical analysis. Built with a **Polyglot Persistence** architecture, it leverages **PostgreSQL** for complex detection logic and structured metadata, and **MongoDB** for high-volume binary storage and telemetry.
 
-## Detection Model
-LumenAid evaluates files with four statistical signals:
-1. Signal 1: Shannon entropy spikes in binary chunks.
-2. Signal 2: Chi-square deviations from normal file-type patterns.
-3. Signal 3: Pattern consistency checks using SQL window functions.
-4. Signal 4: File size anomalies relative to calibrated file-type averages.
+## Detection Model: The Four-Signal Pipeline
+LumenAid evaluates every file through a sophisticated four-signal scoring engine:
 
-## Requirements
-Before running the project, install:
-1. PostgreSQL on port `5432`
-2. MongoDB on port `27017`
-3. Python 3.10 or newer
-4. Node.js 18 or newer
+1.  **Signal 1: Shannon Entropy Spikes** — Detects localized randomness in binary chunks that deviate from the file-type baseline.
+2.  **Signal 2: Chi-Square Anomaly Detection** — Measures statistical deviations in byte distributions to identify hidden payloads in high-entropy files.
+3.  **Signal 3: Pattern Consistency (Sustained Runs)** — Uses SQL Window Functions to identify consecutive anomalous segments, distinguishing real payloads from natural noise.
+4.  **Signal 4: File Size Delta Analysis** — Flags files that are significantly larger than the calibrated average for their type.
 
-## Quick Start
-This is the recommended path for Windows.
+## Architecture Highlights
+- **PostgreSQL**: Stores users, metadata, and performs heavy detection logic via **PL/pgSQL Triggers** and window functions.
+- **MongoDB**: Stores raw file chunks (`raw_chunk_ref`) and detailed analysis telemetry for forensic inspection.
+- **Calibration Engine**: Learns the "Normal" baseline for your environment, reducing false positives in benign high-entropy files (The "Entropy Gate").
 
-1. Open a terminal in the project root.
-2. Install Python dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-3. Install dashboard dependencies:
-   ```bash
-   cd dashboard
-   npm install
-   cd ..
-   ```
-4. Start the full stack:
-   ```bash
-   .\run_project.bat
-   ```
+---
 
-The launcher now keeps everything in one console window and writes service logs to the `logs` folder.
+## Quick Start (Windows)
 
-## If Auto-Start Fails
-If the batch file cannot find MongoDB or your machine uses custom paths, use the manual fallback below.
+### 1. Prerequisites
+- **PostgreSQL** 14+ (Port 5432)
+- **MongoDB** 5+ (Port 27017)
+- **Python** 3.10+
+- **Node.js** 18+
 
-Set environment variables in PowerShell first:
+### 2. Installation
+Open your terminal in the project root:
 ```powershell
-$env:LUMENAID_PG_DSN = "host=localhost dbname=lumenaid user=postgres password=YOUR_PASSWORD"
-$env:MONGOD_EXE = "C:\Path\To\MongoDB\bin\mongod.exe"
-$env:LUMENAID_MONGO_DBPATH = "$PWD\.mongo-data"
-$env:LUMENAID_MONGO_LOG = "$PWD\.mongo-data\mongod.log"
+# Install Python dependencies
+pip install -r requirements.txt
+
+# Install Dashboard dependencies
+cd dashboard
+npm install
+cd ..
 ```
 
-Then start each service manually:
+### 3. Launching the System
+> [!IMPORTANT]
+> If this is your first time running the project, you **must** run `python bulk_calibrate.py` first (see section below) to initialize the detection baselines.
 
-1. MongoDB
-   ```powershell
-   if (!(Test-Path $env:LUMENAID_MONGO_DBPATH)) { New-Item -ItemType Directory -Force -Path $env:LUMENAID_MONGO_DBPATH | Out-Null }
-   & "$env:MONGOD_EXE" --dbpath "$env:LUMENAID_MONGO_DBPATH" --bind_ip 127.0.0.1 --port 27017 --logpath "$env:LUMENAID_MONGO_LOG" --logappend
-   ```
+We provide a unified orchestrator to start the full stack (Mongo, API, and React) in one window:
+```powershell
+python run.py  # or 'py run.py'
+```
+*Press `Ctrl+C` in this window to stop all services gracefully.*
 
-2. Backend API
-   ```bash
-   python -m uvicorn api.main:app --reload --port 8000
-   ```
+---
 
-3. Dashboard
-   ```bash
-   cd dashboard
-   npm install
-   npm start
-   ```
+## Calibration & Testing
+LumenAid is **calibration-dependent**. Before scanning new files, you must build a baseline:
 
-Open these URLs when the services are running:
-1. Dashboard: `http://localhost:3000`
-2. API docs: `http://127.0.0.1:8000/docs`
+1.  **Run Calibration**:
+    ```powershell
+    python bulk_calibrate.py
+    ```
+    This script analyzes clean samples and calculates the **3-Sigma** thresholds used for detection.
 
-## Calibration
-Calibration is required so the engine learns the local "normal" baseline.
+2.  **Access the Dashboard**:
+    - URL: `http://localhost:3000`
+    - API Documentation: `http://127.0.0.1:8000/docs`
 
-1. Run the calibration script from the project root:
-   ```bash
-   python bulk_calibrate.py
-   ```
-2. The script scans the reference samples and builds the 3-sigma baseline used by the scoring system.
+3.  **Upload & Analyze**:
+    - Use the dashboard to upload files.
+    - View the **Entropy Heatmap** and **Hex Dump** for any flagged segments to inspect the suspicious data.
 
-## Testing Workflow
-1. Log in through the dashboard.
-2. Verify the calibrated samples.
-3. Upload a clean file and confirm it returns CLEAN.
-4. Upload a file with hidden data and compare the alerts.
-5. Use the entropy heatmap and hex dump view to inspect suspicious segments.
+## Environment Variables
+If your database configuration differs from the defaults, set these in your environment:
+- `LUMENAID_PG_DSN`: PostgreSQL connection string (e.g., `host=localhost dbname=lumenaid user=postgres password=...`)
+- `LUMENAID_MONGO_URI`: MongoDB connection URI
+- `MONGOD_EXE`: Path to `mongod.exe` if not in PATH
 
-## Useful Environment Variables
-These make the project easier to run on different machines:
-- `LUMENAID_PG_DSN`: PostgreSQL connection string
-- `LUMENAID_MONGO_URI`: MongoDB URI, default `mongodb://localhost:27017`
-- `MONGOD_EXE`: Full path to `mongod.exe` if it is not on PATH
-- `LUMENAID_MONGO_DBPATH`: Local Mongo data folder used by the launcher
-- `LUMENAID_MONGO_LOG`: MongoDB log file path used by the launcher
+---
 
-## Architecture Notes
-- PostgreSQL stores metadata, scores, and alerts.
-- MongoDB stores raw binary chunks and telemetry.
-- The API serves the dashboard and scans files through the engine pipeline.
+## Technical Notes
+- **Data Integrity**: Uses PostgreSQL RLS (Row Level Security) to ensure analysts only see their own scan results.
+- **Performance**: High-speed chunking and parallel database writes allow for scanning large files in seconds.
+- **Extensibility**: New file types can be added to the `file_type_registry` to extend detection capabilities.
