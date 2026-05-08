@@ -32,48 +32,49 @@ def reset_and_calibrate():
             cur.execute("TRUNCATE TABLE files, segments, alerts, scan_jobs, audit_logs RESTART IDENTITY CASCADE;")
             
             # Update Trigger to 3.0 Sigma (Multi-Signal Row-Level Trigger)
-            print("Applying 3.0 Sigma detection threshold to SQL trigger...")
-            multi_signal_sql = """
-            CREATE OR REPLACE FUNCTION fn_analyze_segment_multi_signal()
-            RETURNS TRIGGER LANGUAGE plpgsql AS $$
-            DECLARE
-                v_mean NUMERIC; v_sigma NUMERIC;
-                v_mean_chi NUMERIC; v_sigma_chi NUMERIC;
-                v_entropy_score INTEGER := 0; v_chi_score INTEGER := 0;
-                v_total_score INTEGER := 0;
-            BEGIN
-                SELECT mean_entropy, threshold_sigma, mean_chi, sigma_chi
-                INTO v_mean, v_sigma, v_mean_chi, v_sigma_chi
-                FROM baselines b JOIN files f ON f.file_type = b.file_type
-                WHERE f.file_id = NEW.file_id;
+            # #print("Applying 3.0 Sigma detection threshold to SQL trigger...")
+            # multi_signal_sql = """
+            # CREATE OR REPLACE FUNCTION fn_analyze_segment_multi_signal()
+            # RETURNS TRIGGER LANGUAGE plpgsql AS $$
+            # DECLARE
+            #     v_mean NUMERIC; v_sigma NUMERIC;
+            #     v_mean_chi NUMERIC; v_sigma_chi NUMERIC;
+            #     v_entropy_score INTEGER := 0; v_chi_score INTEGER := 0;
+            #     v_total_score INTEGER := 0;
+            # BEGIN
+            #     SELECT mean_entropy, threshold_sigma, mean_chi, sigma_chi
+            #     INTO v_mean, v_sigma, v_mean_chi, v_sigma_chi
+            #     FROM baselines b JOIN files f ON f.file_type = b.file_type
+            #     WHERE f.file_id = NEW.file_id;
 
-                -- SIGNAL 1: Entropy (3.0 Sigma)
-                IF NEW.entropy_score > (v_mean + 3.0 * v_sigma) THEN v_entropy_score := 3; END IF;
+            #     -- SIGNAL 1: Entropy (3.0 Sigma)
+            #     IF NEW.entropy_score > (v_mean + 3.0 * v_sigma) THEN v_entropy_score := 3; END IF;
 
-                -- SIGNAL 2: Chi-Square (3.0 Sigma)
-                IF NEW.chi_square_score > (v_mean_chi + 3.0 * v_sigma_chi) AND NEW.chi_square_score > 5.0 THEN 
-                    v_chi_score := 3; 
-                END IF;
+            #     -- SIGNAL 2: Chi-Square (3.0 Sigma)
+            #     IF NEW.chi_square_score > (v_mean_chi + 3.0 * v_sigma_chi) AND NEW.chi_square_score > 5.0 THEN 
+            #         v_chi_score := 3; 
+            #     END IF;
 
-                v_total_score := v_entropy_score + v_chi_score;
+            #     v_total_score := v_entropy_score + v_chi_score;
 
-                IF v_total_score >= 3 THEN
-                    INSERT INTO alerts (file_id, segment_id, severity, entropy_score, description)
-                    VALUES (NEW.file_id, NEW.segment_id, 'HIGH', NEW.entropy_score, 
-                            format('Multi-signal detection: Entropy +%s, Chi-Square +%s', v_entropy_score, v_chi_score));
-                END IF;
+            #     IF v_total_score >= 3 THEN
+            #         INSERT INTO alerts (file_id, segment_id, severity, entropy_score, description)
+            #         VALUES (NEW.file_id, NEW.segment_id, 'HIGH', NEW.entropy_score, 
+            #                 format('Multi-signal detection: Entropy +%s, Chi-Square +%s', v_entropy_score, v_chi_score));
+            #     END IF;
 
-                UPDATE files 
-                SET threat_score = threat_score + v_total_score,
-                    risk_level = CASE WHEN (threat_score + v_total_score) >= 6 THEN 'FLAGGED' WHEN (threat_score + v_total_score) >= 3 THEN 'SUSPICIOUS' ELSE 'CLEAN' END,
-                    status = CASE WHEN (threat_score + v_total_score) >= 6 THEN 'FLAGGED' ELSE status END
-                WHERE file_id = NEW.file_id;
+            #     UPDATE files 
+            #     SET threat_score = threat_score + v_total_score,
+            #         risk_level = CASE WHEN (threat_score + v_total_score) >= 6 THEN 'FLAGGED' WHEN (threat_score + v_total_score) >= 3 THEN 'SUSPICIOUS' ELSE 'CLEAN' END,
+            #         status = CASE WHEN (threat_score + v_total_score) >= 6 THEN 'FLAGGED' ELSE status END
+            #     WHERE file_id = NEW.file_id;
 
-                RETURN NEW;
-            END; $$;
-            """
-            cur.execute(multi_signal_sql)
-            conn.commit()
+            #     RETURN NEW;
+            # END; $$;
+            # """
+            # cur.execute(multi_signal_sql)
+            # */conn.commit()
+# (Skipping obsolete trigger injection since schema_migration.sql handles it perfectly now)
         conn.close()
         
         # MongoDB
