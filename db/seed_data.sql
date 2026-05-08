@@ -1,4 +1,4 @@
--- this file is used to insert data into the tables
+--Seed data — inserts file type registry, default baselines, and admin/analyst user accounts
 
 INSERT INTO file_type_registry (type_code, description)
 VALUES

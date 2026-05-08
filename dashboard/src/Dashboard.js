@@ -1,3 +1,4 @@
+//React dashboard — login, file table, entropy heatmap, hex dump sandbox, alerts, and admin telemetry
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import "./index.css"
 const API = "http://localhost:8000";

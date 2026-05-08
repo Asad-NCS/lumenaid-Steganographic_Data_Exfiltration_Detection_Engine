@@ -1,4 +1,4 @@
---this file is to create tables and trigger for the database
+--Master schema — creates all tables, indexes, roles, RLS policies, and detection triggers (runs on every startup)
 
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
@@ -206,66 +206,59 @@ BEGIN
         SELECT
             ins.file_id,
             f.file_type,
+            COUNT(*) FILTER (WHERE ins.entropy_score > (b.mean_entropy + 2.0 * b.threshold_sigma)) AS entropy_anomalies,
+            COUNT(*) FILTER (WHERE ins.chi_square_score > (COALESCE(b.mean_chi, 0) + 2.0 * COALESCE(b.sigma_chi, 1)) AND ins.chi_square_score > 5.0) AS chi_anomalies,
             MAX(ins.entropy_score)                              AS max_entropy,
             MAX(ins.chi_square_score)                           AS max_chi,
             b.mean_entropy,
             b.threshold_sigma,
-            b.mean_chi,
-            b.sigma_chi,
-            (b.mean_entropy + 3.0 * b.threshold_sigma)         AS anomaly_threshold,
-            (COALESCE(b.mean_chi, 0) + 3.0 * COALESCE(b.sigma_chi, 1)) AS chi_threshold,
+            (b.mean_entropy + 2.0 * b.threshold_sigma)         AS anomaly_threshold,
             (
                 SELECT s2.segment_id FROM segments s2
                 WHERE s2.file_id = ins.file_id
-                  AND s2.segment_index = (
-                      SELECT s3.segment_index FROM inserted_rows s3
-                      WHERE s3.file_id = ins.file_id
-                      ORDER BY s3.entropy_score DESC LIMIT 1
-                  )
-                LIMIT 1
-            )                                                   AS worst_segment_id,
+                ORDER BY s2.entropy_score DESC LIMIT 1
+            ) AS worst_segment_id,
             (
-                SELECT s4.segment_index FROM inserted_rows s4
-                WHERE s4.file_id = ins.file_id
-                ORDER BY s4.entropy_score DESC LIMIT 1
-            )                                                   AS worst_segment_index,
-            (
-                SELECT s5.entropy_score FROM inserted_rows s5
-                WHERE s5.file_id = ins.file_id
-                ORDER BY s5.entropy_score DESC LIMIT 1
-            )                                                   AS worst_entropy_score
+                SELECT s3.segment_index FROM segments s3
+                WHERE s3.file_id = ins.file_id
+                ORDER BY s3.entropy_score DESC LIMIT 1
+            ) AS worst_segment_index
         FROM inserted_rows ins
         JOIN files     f ON f.file_id   = ins.file_id
         JOIN baselines b ON b.file_type = f.file_type
         GROUP BY ins.file_id, f.file_type, b.mean_entropy, b.threshold_sigma, b.mean_chi, b.sigma_chi
     LOOP
-        IF r.max_entropy > r.anomaly_threshold OR (r.max_chi > r.chi_threshold AND r.max_chi > 5.0) THEN
+        IF r.entropy_anomalies > 0 OR r.chi_anomalies > 0 THEN
             INSERT INTO alerts (file_id, segment_id, severity, entropy_score, description)
             VALUES (
                 r.file_id, r.worst_segment_id, 'HIGH',
-                r.worst_entropy_score,
-                format('Multi-signal detection in segment %s. Entropy: %s (limit %s)',
-                       r.worst_segment_index, round(r.worst_entropy_score, 2), round(r.anomaly_threshold, 2))
+                r.max_entropy,
+                format('Detected %s entropy anomalies and %s chi anomalies. Max entropy: %s (limit %s)',
+                       r.entropy_anomalies, r.chi_anomalies, round(r.max_entropy, 2), round(r.anomaly_threshold, 2))
             );
+            
             UPDATE files
             SET    status       = 'FLAGGED',
-                   threat_score = threat_score + 3,
+                   threat_score = threat_score + (r.entropy_anomalies * 3) + (r.chi_anomalies * 2),
                    risk_level   = CASE
-                       WHEN threat_score + 3 >= 6 THEN 'FLAGGED'
-                       WHEN threat_score + 3 >= 3 THEN 'SUSPICIOUS'
+                       WHEN threat_score + (r.entropy_anomalies * 3) + (r.chi_anomalies * 2) >= 15 THEN 'FLAGGED'
+                       WHEN threat_score + (r.entropy_anomalies * 3) + (r.chi_anomalies * 2) >= 5  THEN 'SUSPICIOUS'
                        ELSE 'CLEAN'
                    END,
                    updated_at   = NOW()
             WHERE  file_id = r.file_id;
         ELSE
-            -- Only downgrade to CLEAN if NO other signals have flagged it yet
+            -- No anomalies detected in this batch
             UPDATE files
             SET    status     = 'CLEAN',
-                   risk_level = 'CLEAN',
+                   risk_level = CASE
+                       WHEN threat_score >= 15 THEN 'FLAGGED'
+                       WHEN threat_score >= 5  THEN 'SUSPICIOUS'
+                       ELSE 'CLEAN'
+                   END,
                    updated_at = NOW()
             WHERE  file_id    = r.file_id
-              AND  status     = 'PENDING'
-              AND  threat_score = 0;
+              AND  status     = 'PENDING';
         END IF;
     END LOOP;
     RETURN NULL;

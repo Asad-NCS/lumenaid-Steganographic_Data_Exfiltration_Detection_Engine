@@ -1,4 +1,4 @@
---this file contains views and materialized views for analytics
+--Analytics views — smoothed anomaly detection view (window functions) and threat analytics materialized view
 
 CREATE OR REPLACE VIEW vw_smoothed_anomalies AS
 SELECT

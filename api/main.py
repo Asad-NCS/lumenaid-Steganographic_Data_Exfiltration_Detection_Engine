@@ -1,4 +1,4 @@
-#basically the API that connects everything
+#FastAPI REST API — connects the React dashboard to the detection engine and PostgreSQL/MongoDB databases
 """
 LumenAid — Steganographic Data Exfiltration Detection Engine
 api/main.py

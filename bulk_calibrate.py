@@ -1,3 +1,4 @@
+#Calibration tool — scans baseline samples, computes 3-sigma thresholds, and writes to PostgreSQL baselines table
 import os
 import sys
 import psycopg2

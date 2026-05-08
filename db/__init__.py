@@ -1,1 +1,1 @@
-#db package for lumenaid — hybrid postgres + mongodb persistence layer
+#Database package — hybrid PostgreSQL + MongoDB persistence layer

@@ -1,4 +1,4 @@
--- Procedure: refresh_threat_analytics
+--Advanced procedures — baseline recalculation, materialized view refresh, auto-refresh trigger
 -- Purpose: Refreshes the materialized view asynchronously for the dashboard.
 CREATE OR REPLACE PROCEDURE refresh_threat_analytics()
 LANGUAGE plpgsql

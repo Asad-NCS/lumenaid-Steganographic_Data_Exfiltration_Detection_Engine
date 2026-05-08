@@ -1,3 +1,4 @@
+#Hybrid persistence layer — raw binary chunks in MongoDB, structured metadata in PostgreSQL
 import psycopg2
 import psycopg2.extras
 from pymongo import MongoClient
@@ -28,13 +29,13 @@ class DatabaseManager:
     #connection helpers
 
     def _connect_postgres(self):
-        #opens_a postgres connection if one isn't already open.
+        #[PostgreSQL] opens a postgres connection if one isn't already open.
         if self._pg_conn is None or self._pg_conn.closed:
             self._pg_conn = psycopg2.connect(self.pg_dsn)
         return self._pg_conn
 
     def _connect_mongo(self):
-        #opens_a mongo client + selects the target database.
+        #[MongoDB] opens a mongo client + selects the target database.
         if self._mongo_client is None:
             self._mongo_client = MongoClient(self.mongo_uri)
             self._mongo_db = self._mongo_client[self.mongo_db_name]
@@ -56,7 +57,7 @@ class DatabaseManager:
     def _insert_chunks_to_mongo(
         self, file_id: int, segments: List[Dict]
     ) -> List[str]:
-        #inserts_each binary chunk as a document into the mongo 'chunks' collection.
+        #[MongoDB] inserts each binary chunk as a document into the mongo 'chunks' collection.
         #returns_a list of 24-char hex objectid strings, one per segment, in order.
         mongo_db = self._connect_mongo()
         chunks_col = mongo_db["chunks"]
@@ -80,7 +81,7 @@ class DatabaseManager:
     #postgres layer
 
     def _insert_file_record(self, cursor, user_id: int, file_type: str, file_size: int) -> int:
-        #inserts_a row into the files table and returns the generated file_id.
+        #[PostgreSQL] inserts a row into the files table and returns the generated file_id.
         cursor.execute(
             """
             INSERT INTO files (user_id, file_type, file_size, status)
@@ -99,7 +100,7 @@ class DatabaseManager:
         segments: List[Dict],
         mongo_ids: List[str],
     ):
-        #performs_a batch insert into the segments table.
+        #[PostgreSQL] performs a batch insert into the segments table.
         rows = [
             (
                 file_id,
@@ -191,7 +192,7 @@ class DatabaseManager:
                 pg_conn.autocommit = False
 
     def _backpatch_mongo_file_id(self, mongo_ids: List[str], file_id: int):
-        #updates_the file_id field on the mongo chunk docs with the real postgres id.
+        #[MongoDB] updates the file_id field on the mongo chunk docs with the real postgres id.
         #this_is a best-effort operation — we don't roll back mongo if it fails
         #because mongo is the write-once raw store; a background cleanup job
         #can reconcile orphans using the file_id = 0 sentinel.
@@ -206,7 +207,7 @@ class DatabaseManager:
         )
 
     def insert_scan_telemetry(self, telemetry_data: Dict):
-        #dumps massive telemetry json into mongo for performance analysis
+        #[MongoDB] dumps massive telemetry json into mongo for performance analysis
         mongo_db = self._connect_mongo()
         telemetry_col = mongo_db["scan_telemetry"]
         
@@ -217,7 +218,7 @@ class DatabaseManager:
         telemetry_col.insert_one(telemetry_data)
 
     def store_threat_payload(self, file_id: int, segment_index: int, payload_hex: str):
-        #stores the extracted threat payload in mongo sandbox
+        #[MongoDB] stores the extracted threat payload in mongo sandbox
         mongo_db = self._connect_mongo()
         payloads_col = mongo_db["threat_payloads"]
         
@@ -230,7 +231,7 @@ class DatabaseManager:
         })
 
     def get_chunk_bytes(self, mongo_id: str) -> bytes:
-        #fetches the raw binary chunk from mongodb by its ObjectId hex string.
+        #[MongoDB] fetches the raw binary chunk from mongodb by its ObjectId hex string.
         from bson import ObjectId
         mongo_db = self._connect_mongo()
         chunks_col = mongo_db["chunks"]
@@ -241,7 +242,7 @@ class DatabaseManager:
         return doc["raw_bytes"]
 
     def get_telemetry(self, limit: int = 10) -> List[Dict]:
-        #fetches recent scan telemetry from mongodb for admin audit logs.
+        #[MongoDB] fetches recent scan telemetry from mongodb for admin audit logs.
         mongo_db = self._connect_mongo()
         telemetry_col = mongo_db["scan_telemetry"]
         

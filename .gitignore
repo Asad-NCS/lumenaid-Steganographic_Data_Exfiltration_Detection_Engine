@@ -29,6 +29,7 @@ __pycache__/
 Thumbs.db
 
 # Logs
+logs/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -38,6 +39,8 @@ yarn-error.log*
 dashboard/node_modules/
 dashboard/build/
 dashboard/dist/
+
+# MongoDB local data
 .mongo-data/
 **/mongod.lock
 **/WiredTiger*
@@ -47,6 +50,10 @@ dashboard/dist/
 **/sizeStorer.wt
 **/storage.bson
 **/metrics*
+
+# Crash dumps
 **/*.stackdump
 mongo_log.txt
+
+# Steghide binaries (downloaded tool)
 tools/steghide/

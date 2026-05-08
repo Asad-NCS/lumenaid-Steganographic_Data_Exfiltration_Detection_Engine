@@ -1,4 +1,4 @@
-#this file calculates the entropy per chunk 
+#Core analysis engine — splits files into 1024-byte chunks and computes Shannon entropy + chi-square per segment
 import math
 import os
 from typing import Dict, List

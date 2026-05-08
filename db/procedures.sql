@@ -1,4 +1,4 @@
---stored procedures for lumenaid
+--Stored procedures — get_file_summary(), get_flagged_files(), update_baseline()
 
 CREATE OR REPLACE FUNCTION get_file_summary(p_file_id INTEGER)
 RETURNS TABLE (

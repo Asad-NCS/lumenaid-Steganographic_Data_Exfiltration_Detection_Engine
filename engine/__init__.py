@@ -1,1 +1,1 @@
-#engine package for lumenaid
+#Engine package — entropy analysis and scan orchestration
