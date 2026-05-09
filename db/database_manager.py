@@ -120,6 +120,7 @@ class DatabaseManager:
             VALUES %s
             """,
             rows,
+            page_size=len(rows),
         )
 
     #public api

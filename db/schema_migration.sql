@@ -207,7 +207,17 @@ BEGIN
             ins.file_id,
             f.file_type,
             COUNT(*) FILTER (WHERE ins.entropy_score > (b.mean_entropy + 2.0 * b.threshold_sigma)) AS entropy_anomalies,
-            COUNT(*) FILTER (WHERE ins.chi_square_score > (COALESCE(b.mean_chi, 0) + 2.0 * COALESCE(b.sigma_chi, 1)) AND ins.chi_square_score > 5.0 AND ins.entropy_score > 7.0) AS chi_anomalies,
+            COUNT(*) FILTER (
+                WHERE f.file_type != 'TEXT'
+                  AND ins.chi_square_score > (COALESCE(b.mean_chi, 0) + 2.0 * COALESCE(b.sigma_chi, 1))
+                  AND ins.chi_square_score > 5.0
+                  AND ins.entropy_score > 7.0
+            ) +
+            COUNT(*) FILTER (
+                WHERE f.file_type = 'TEXT'
+                  AND ins.chi_square_score > (COALESCE(b.mean_chi, 0) + 2.0 * COALESCE(b.sigma_chi, 1))
+                  AND ins.chi_square_score > 5.0
+            ) AS chi_anomalies,
             MAX(ins.entropy_score)                              AS max_entropy,
             MAX(ins.chi_square_score)                           AS max_chi,
             b.mean_entropy,
