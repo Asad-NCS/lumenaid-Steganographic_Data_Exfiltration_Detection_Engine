@@ -15,18 +15,42 @@ VALUES
     ('PDF',    7.7000, 0.2000),
     ('JPG',    7.7500, 0.1500),
     ('PNG',    7.5000, 0.1500)
-ON CONFLICT (file_type) DO UPDATE
-    SET mean_entropy    = EXCLUDED.mean_entropy,
-        threshold_sigma = EXCLUDED.threshold_sigma,
-        updated_at      = NOW();
+ON CONFLICT (file_type) DO NOTHING;
 
 -- Seed realistic chi-square baselines based on empirical measurements.
 -- These are conservative estimates — bulk_calibrate.py will overwrite
 -- these with real values once calibration samples are scanned.
-UPDATE baselines SET mean_chi = 4500, sigma_chi = 3000 WHERE file_type = 'TEXT';
-UPDATE baselines SET mean_chi = 1000, sigma_chi = 8000 WHERE file_type = 'JPG';
-UPDATE baselines SET mean_chi = 2400, sigma_chi =  800 WHERE file_type = 'PDF';
-UPDATE baselines SET mean_chi =  410, sigma_chi = 2400 WHERE file_type = 'PNG';
+DO $$
+BEGIN
+    UPDATE baselines
+    SET mean_chi = 4500, sigma_chi = 3000
+    WHERE file_type = 'TEXT' AND sigma_chi = 1;
+END
+$$;
+
+DO $$
+BEGIN
+    UPDATE baselines
+    SET mean_chi = 1000, sigma_chi = 8000
+    WHERE file_type = 'JPG' AND sigma_chi = 1;
+END
+$$;
+
+DO $$
+BEGIN
+    UPDATE baselines
+    SET mean_chi = 2400, sigma_chi = 800
+    WHERE file_type = 'PDF' AND sigma_chi = 1;
+END
+$$;
+
+DO $$
+BEGIN
+    UPDATE baselines
+    SET mean_chi = 410, sigma_chi = 2400
+    WHERE file_type = 'PNG' AND sigma_chi = 1;
+END
+$$;
 
 INSERT INTO users (email, username, password_hash, role) VALUES
 ('admin@lumenaid.local',   'admin',   '$2b$12$ROBsC1EbGqJrQDFWw4zs0OSGBDFbjxsyXXbe2DGxnytEwYWVSRd1a',   'admin'),

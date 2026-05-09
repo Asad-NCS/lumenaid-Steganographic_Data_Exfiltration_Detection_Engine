@@ -112,6 +112,9 @@ class DatabaseManager:
             for idx, seg in enumerate(segments)
         ]
 
+        if not rows:
+            return
+
         psycopg2.extras.execute_values(
             cursor,
             """
@@ -120,6 +123,7 @@ class DatabaseManager:
             VALUES %s
             """,
             rows,
+            page_size=max(1, len(rows)),
         )
 
     #public api

@@ -15,14 +15,12 @@ BEGIN
     RETURN QUERY
     SELECT
         f.status,
-        COUNT(a.alert_id),
+        (SELECT COUNT(*) FROM alerts WHERE file_id = p_file_id),
         f.file_name,
         f.file_type,
         f.submitted_at,
-        MAX(s.entropy_score)
+        (SELECT MAX(entropy_score) FROM segments WHERE file_id = p_file_id)
     FROM files f
-    LEFT JOIN alerts   a ON a.file_id = f.file_id
-    LEFT JOIN segments s ON s.file_id = f.file_id
     WHERE f.file_id = p_file_id
     GROUP BY f.file_id, f.status, f.file_name, f.file_type, f.submitted_at;
 END;
@@ -47,14 +45,11 @@ BEGIN
         f.file_name,
         f.file_type,
         f.submitted_at,
-        COUNT(a.alert_id),
-        MAX(s.entropy_score)
+        (SELECT COUNT(*) FROM alerts a WHERE a.file_id = f.file_id),
+        (SELECT MAX(s.entropy_score) FROM segments s WHERE s.file_id = f.file_id)
     FROM files f
-    LEFT JOIN alerts   a ON a.file_id = f.file_id
-    LEFT JOIN segments s ON s.file_id = f.file_id
     WHERE f.status = 'FLAGGED'
-    GROUP BY f.file_id, f.file_name, f.file_type, f.submitted_at
-    ORDER BY MAX(s.entropy_score) DESC;
+    ORDER BY (SELECT MAX(s.entropy_score) FROM segments s WHERE s.file_id = f.file_id) DESC;
 END;
 $$;
 

@@ -15,9 +15,6 @@ DEFAULT_USER  = 1
 
 CALIBRATION_ROOT = r"calibartion testing pictures,txt files"
 FOLDERS = {
-    "txt": "TEXT",
-    "jpg": "JPG",
-    "pdf": "PDF",
     "png": "PNG"
 }
 
@@ -29,7 +26,7 @@ def reset_and_calibrate():
     try:
         conn = psycopg2.connect(PG_DSN)
         with conn.cursor() as cur:
-            cur.execute("TRUNCATE TABLE files, segments, alerts, scan_jobs, audit_logs RESTART IDENTITY CASCADE;")
+            cur.execute("DELETE FROM files WHERE is_calibrated = TRUE AND file_type = 'PNG';")
             
             # Update Trigger to 3.0 Sigma (Multi-Signal Row-Level Trigger)
             # #print("Applying 3.0 Sigma detection threshold to SQL trigger...")
