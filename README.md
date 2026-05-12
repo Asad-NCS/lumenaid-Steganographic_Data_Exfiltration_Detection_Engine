@@ -1,81 +1,79 @@
-# LumenAid - Steganographic Data Exfiltration Detection Engine
+# 🛡️ LumenAid - Steganographic Data Exfiltration Detection Engine
 
-## Overview
-LumenAid is a high-performance detection platform designed to identify steganographic data exfiltration through advanced statistical analysis. Built with a **Polyglot Persistence** architecture, it leverages **PostgreSQL** for complex detection logic and structured metadata, and **MongoDB** for high-volume binary storage and telemetry.
+> **Course:** CS 236: Advanced Database Management Systems  
+> **Instructor:** Dr. Ayesha Hakim  
+> **Team:** Muhammad Asad Kashif, Azaan Murtaza, Hammad Ajmal
 
-## Detection Model: The Four-Signal Pipeline
-LumenAid evaluates every file through a sophisticated four-signal scoring engine:
-
-1.  **Signal 1: Shannon Entropy Spikes** — Detects localized randomness in binary chunks that deviate from the file-type baseline.
-2.  **Signal 2: Chi-Square Anomaly Detection** — Measures statistical deviations in byte distributions to identify hidden payloads in high-entropy files.
-3.  **Signal 3: Pattern Consistency (Sustained Runs)** — Uses SQL Window Functions to identify consecutive anomalous segments, distinguishing real payloads from natural noise.
-4.  **Signal 4: File Size Delta Analysis** — Flags files that are significantly larger than the calibrated average for their type.
-
-## Architecture Highlights
-- **PostgreSQL**: Stores users, metadata, and performs heavy detection logic via **PL/pgSQL Triggers** and window functions.
-- **MongoDB**: Stores raw file chunks (`raw_chunk_ref`) and detailed analysis telemetry for forensic inspection.
-- **Calibration Engine**: Learns the "Normal" baseline for your environment, reducing false positives in benign high-entropy files (The "Entropy Gate").
+LumenAid is a high-performance detection platform designed to identify hidden exfiltration attempts in benign files. Using **Statistical Steganalysis**, it flags anomalous data blocks that standard antivirus and DLP systems miss.
 
 ---
 
-## Quick Start (Windows)
+## 💎 Advanced Database Highlights (ADBMS Focus)
+This project implements several advanced database concepts required for the course:
+*   **Polyglot Persistence:** Hybrid architecture using **PostgreSQL** (Metadata/ACID) and **MongoDB** (Binary Chunks/High-throughput).
+*   **Database-Side Logic:** Real-time detection using **PL/pgSQL Triggers** and Stored Procedures.
+*   **Optimization:** **Materialized Views** for high-speed dashboard analytics.
+*   **Dynamic Analytics:** Automated 3-Sigma threshold recalculation inside the database.
+
+---
+
+## 🚀 Quick Start (First-Time Setup)
 
 ### 1. Prerequisites
-- **PostgreSQL** 14+ (Port 5432)
-- **MongoDB** 5+ (Port 27017)
-- **Python** 3.10+
-- **Node.js** 18+
+Ensure you have the following installed on your Windows machine:
+*   **PostgreSQL 14+** (Default port: 5432)
+*   **MongoDB 5+** (Default port: 27017)
+*   **Python 3.10+**
+*   **Node.js 18+**
 
 ### 2. Installation
-Open your terminal in the project root:
+Open a terminal in the project root:
 ```powershell
-# Install Python dependencies
+# Install Python backend dependencies
 pip install -r requirements.txt
 
-# Install Dashboard dependencies
+# Install Dashboard frontend dependencies
 cd dashboard
 npm install
 cd ..
 ```
 
-### 3. Launching the System
-> [!IMPORTANT]
-> If this is your first time running the project, you **must** run `python bulk_calibrate.py` first (see section below) to initialize the detection baselines.
-
-We provide a unified orchestrator to start the full stack (Mongo, API, and React) in one window:
+### 3. Initialize & Calibration (MANDATORY)
+Before scanning, you must initialize the database baselines. Make sure your Postgres and Mongo servers are running, then run:
 ```powershell
-python run.py  # or 'py run.py'
+python bulk_calibrate.py
 ```
-*Press `Ctrl+C` in this window to stop all services gracefully.*
+*This script will create the tables, seed the users, and calibrate the detection engine.*
+
+### 4. Launch the System
+We provide a unified orchestrator to start the API and React Dashboard in one window:
+```powershell
+python run.py
+```
+Access the dashboard at: **`http://localhost:3000`**
 
 ---
 
-## Calibration & Testing
-LumenAid is **calibration-dependent**. Before scanning new files, you must build a baseline:
-
-1.  **Run Calibration**:
-    ```powershell
-    python bulk_calibrate.py
-    ```
-    This script analyzes clean samples and calculates the **3-Sigma** thresholds used for detection.
-
-2.  **Access the Dashboard**:
-    - URL: `http://localhost:3000`
-    - API Documentation: `http://127.0.0.1:8000/docs`
-
-3.  **Upload & Analyze**:
-    - Use the dashboard to upload files.
-    - View the **Entropy Heatmap** and **Hex Dump** for any flagged segments to inspect the suspicious data.
-
-## Environment Variables
-If your database configuration differs from the defaults, set these in your environment:
-- `LUMENAID_PG_DSN`: PostgreSQL connection string (e.g., `host=localhost dbname=lumenaid user=postgres password=...`)
-- `LUMENAID_MONGO_URI`: MongoDB connection URI
-- `MONGOD_EXE`: Path to `mongod.exe` if not in PATH
+## 👤 Login Credentials
+The system comes pre-seeded with two accounts:
+*   **Admin:** `admin` / Password: `password123`
+*   **Analyst:** `analyst` / Password: `password123`
 
 ---
 
-## Technical Notes
-- **Data Integrity**: Uses PostgreSQL RLS (Row Level Security) to ensure analysts only see their own scan results.
-- **Performance**: High-speed chunking and parallel database writes allow for scanning large files in seconds.
-- **Extensibility**: New file types can be added to the `file_type_registry` to extend detection capabilities.
+## 🛠️ Project Structure
+*   `api/` - FastAPI REST Backend.
+*   `db/` - SQL Migrations, Procedures, and Database Manager.
+*   `engine/` - Core Entropy and Chi-Square detection logic.
+*   `dashboard/` - React visualization interface.
+*   `tools/` - Testing and maintenance scripts.
+
+---
+
+## ❓ Troubleshooting
+*   **DB Connection Error:** Ensure PostgreSQL is running. You can set your connection string via the `LUMENAID_PG_DSN` environment variable.
+*   **Mongo Not Found:** If `mongod.exe` is not in your PATH, the orchestrator might fail. Set the `MONGOD_EXE` environment variable to the path of your mongo executable.
+*   **Port Conflicts:** Ensure ports 3000 (React) and 8000 (API) are available.
+
+---
+© 2026 LumenAid Team - NUST SEECS
