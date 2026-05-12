@@ -72,7 +72,11 @@ The system comes pre-seeded with two accounts:
 
 ## ❓ Troubleshooting
 *   **DB Connection Error:** Ensure PostgreSQL is running. You can set your connection string via the `LUMENAID_PG_DSN` environment variable.
-*   **Mongo Not Found:** If `mongod.exe` is not in your PATH, the orchestrator might fail. Set the `MONGOD_EXE` environment variable to the path of your mongo executable.
+*   **Mongo Not Found:** 
+    *   **Option A (Automated):** Open **`run.py`** and update the `MONGOD_EXE` path to point to your local installation.
+    *   **Option B (Manual):** Open **Command Prompt as Administrator** and run the `mongod` command manually before starting the system.
+*   **Dashboard/UI Fail:** 
+    *   If `run.py` fails to start the frontend, navigate to the directory manually: `cd dashboard` and run `npm start`.
 *   **Port Conflicts:** Ensure ports 3000 (React) and 8000 (API) are available.
 
 ---
