@@ -41,6 +41,10 @@ from pydantic import BaseModel
 
 from db.database_manager import DatabaseManager
 from engine.scan_pipeline import ScanPipeline
+from dotenv import load_dotenv
+
+# Load environment variables from .env file if it exists
+load_dotenv()
 
 
 # Configuration — read from environment with sane defaults for local dev

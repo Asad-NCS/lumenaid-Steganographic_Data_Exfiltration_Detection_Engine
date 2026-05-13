@@ -3,6 +3,9 @@ import sys
 import os
 import time
 import atexit
+from dotenv import load_dotenv
+
+load_dotenv()
 
 processes = []
 

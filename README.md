@@ -36,16 +36,21 @@ pip install -r requirements.txt
 cd dashboard
 npm install
 cd ..
+
+### 3. Environment Configuration
+The project uses environment variables for database connections. 
+1. Copy the example file: `cp .env.example .env` (or manually copy and rename).
+2. Open `.env` and update your **PostgreSQL password** or connection strings if they differ from the defaults.
 ```
 
-### 3. Initialize & Calibration (MANDATORY)
+### 4. Initialize & Calibration (MANDATORY)
 Before scanning, you must initialize the database baselines. Make sure your Postgres and Mongo servers are running, then run:
 ```powershell
 python bulk_calibrate.py
 ```
 *This script will create the tables, seed the users, and calibrate the detection engine.*
 
-### 4. Launch the System
+### 5. Launch the System
 We provide a unified orchestrator to start the API and React Dashboard in one window:
 ```powershell
 python run.py

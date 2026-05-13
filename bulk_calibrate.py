@@ -6,6 +6,9 @@ import statistics
 from db.database_manager import DatabaseManager
 from engine.scan_pipeline import ScanPipeline
 from pymongo import MongoClient
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Configuration
 PG_DSN        = os.getenv("LUMENAID_PG_DSN",       f"host=localhost dbname=lumenaid user=postgres password={os.getenv('PGPASSWORD', '3568')}")
@@ -15,7 +18,10 @@ DEFAULT_USER  = 1
 
 CALIBRATION_ROOT = r"calibartion testing pictures,txt files"
 FOLDERS = {
-    "jpg": "JPG"
+    "jpg": "JPG",
+    "png": "PNG",
+    "pdf": "PDF",
+    "txt": "TEXT"
 }
 
 def reset_and_calibrate():
@@ -26,7 +32,7 @@ def reset_and_calibrate():
     try:
         conn = psycopg2.connect(PG_DSN)
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM files WHERE is_calibrated = TRUE AND file_type = 'JPG';")
+            cur.execute("DELETE FROM files WHERE is_calibrated = TRUE;")
             
             # Update Trigger to 3.0 Sigma (Multi-Signal Row-Level Trigger)
             # #print("Applying 3.0 Sigma detection threshold to SQL trigger...")

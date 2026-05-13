@@ -5,6 +5,8 @@
 fastapi==0.111.0
 uvicorn[standard]==0.29.0
 python-multipart==0.0.9      # required for FastAPI file uploads
+pydantic>=2.0.0              # data validation
+python-dotenv==1.0.1         # support for .env files
 
 # --- Database layer ---
 psycopg2-binary>=2.9.12       # PostgreSQL driver
