@@ -224,7 +224,7 @@ class FileAnalysisResponse(BaseModel):
     baseline:      Optional[dict]
     segments:      List[SegmentRecord]
     alerts:        List[AlertRecord]
-    signals_fired: dict   # {signal_1: bool, signal_2: bool, signal_3: bool, signal_4: bool}
+    signals_fired: dict   # {signal_1: bool, signal_2: bool, signal_3: bool, signal_4: bool, signal_5: bool}
 
 
 # 
@@ -629,10 +629,12 @@ def get_file_analysis(file_id: int):
     # Signal 2: any segment chi_square exceeded 3-sigma threshold
     chi_threshold = (baseline["mean_chi"] + 3.0 * baseline["sigma_chi"]) if baseline else 50.0
     s2 = any(float(r["chi_square_score"] or 0) > chi_threshold and float(r["chi_square_score"] or 0) > 5.0 for r in seg_rows)
-    # Signal 3 & 4: check alert descriptions
+    # Signal 3, 4 & 5: check alert descriptions
     alert_descs = " ".join(r["description"] or "" for r in alert_rows)
     s3 = "Signal 3" in alert_descs or "Pattern Consistency" in alert_descs
     s4 = "Signal 4" in alert_descs or "size anomaly" in alert_descs.lower()
+    # Signal 5: PNG/JPG structure anomaly, bytes appended after IEND/EOI marker
+    s5 = "Signal 5" in alert_descs or "Structure Anomaly" in alert_descs
 
     return FileAnalysisResponse(
         file_id=file_row["file_id"],
@@ -644,10 +646,11 @@ def get_file_analysis(file_id: int):
         segments=segments,
         alerts=alerts,
         signals_fired={
-            "signal_1_entropy":  s1,
-            "signal_2_chi":      s2,
-            "signal_3_pattern":  s3,
-            "signal_4_size":     s4,
+            "signal_1_entropy":    s1,
+            "signal_2_chi":        s2,
+            "signal_3_pattern":    s3,
+            "signal_4_size":       s4,
+            "signal_5_structure":  s5,
         },
     )
 

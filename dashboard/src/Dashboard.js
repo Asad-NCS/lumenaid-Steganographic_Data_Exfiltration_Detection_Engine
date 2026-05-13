@@ -694,39 +694,50 @@ export default function Dashboard() {
                 {/* Signals Fired Breakdown */}
                 {analysis.signals_fired && (() => {
                   const sf = analysis.signals_fired;
+                  const fileType = (analysis.file_type || "").toUpperCase();
                   const signals = [
-                    { key: "signal_1_entropy", label: "Shannon Entropy", weight: "+3 pts", desc: "Randomness spike above baseline" },
-                    { key: "signal_2_chi", label: "Chi-Square Dist.", weight: "+3 pts", desc: "Byte DNA deviates from natural pattern" },
-                    { key: "signal_3_pattern", label: "Pattern Consistency", weight: "+2 pts", desc: "Sustained anomaly run (3+ consecutive)" },
-                    { key: "signal_4_size", label: "File Size Delta", weight: "+2 pts", desc: "File larger than historical average" },
+                    { key: "signal_1_entropy",   label: "Shannon Entropy",      weight: "+3 pts", desc: "Randomness spike above baseline" },
+                    { key: "signal_2_chi",        label: "Chi-Square Dist.",     weight: "+3 pts", desc: "Byte DNA deviates from natural pattern" },
+                    { key: "signal_3_pattern",    label: "Pattern Consistency",  weight: "+2 pts", desc: "Sustained anomaly run (3+ consecutive)" },
+                    { key: "signal_4_size",       label: "File Size Delta",      weight: "+2 pts", desc: "File larger than historical average" },
+                    ...(["PNG","JPG"].includes(fileType) ? [
+                      { key: "signal_5_structure", label: "Structure Integrity", weight: "+10 pts", desc: fileType === "PNG" ? "Payload appended after PNG IEND marker" : "Payload appended after JPEG EOI marker" },
+                    ] : []),
                   ];
                   return (
                     <div style={{ marginBottom: 18 }}>
                       <div style={{ fontSize: 10, color: "#2e4257", fontFamily: "'Space Mono', monospace", letterSpacing: 1, textTransform: "uppercase", marginBottom: 10 }}>Detection Signals</div>
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                        {signals.map(sig => {
+                        {signals.map((sig, idx) => {
                           const fired = sf[sig.key];
+                          const isSignal5 = sig.key === "signal_5_structure";
+                          const accentColor = isSignal5 && fired ? "#f97316" : fired ? "#ef4444" : null;
                           return (
                             <div key={sig.key} style={{
                               display: "flex", alignItems: "center", gap: 10,
                               padding: "10px 12px", borderRadius: 8,
-                              background: fired ? "rgba(239,68,68,0.06)" : "#08101a",
-                              border: `1px solid ${fired ? "#ef444330" : "#141f2e"}`,
+                              background: isSignal5 && fired ? "rgba(249,115,22,0.08)" : fired ? "rgba(239,68,68,0.06)" : "#08101a",
+                              border: `1px solid ${isSignal5 && fired ? "#f9731640" : fired ? "#ef444330" : "#141f2e"}`,
+                              gridColumn: isSignal5 ? "1 / -1" : undefined,
+                              borderLeft: isSignal5 && fired ? "3px solid #f97316" : undefined,
                             }}>
                               <div style={{
                                 width: 22, height: 22, borderRadius: "50%", flexShrink: 0,
-                                background: fired ? "#ef444420" : "#141f2e",
+                                background: accentColor ? accentColor + "20" : "#141f2e",
                                 display: "flex", alignItems: "center", justifyContent: "center",
                                 fontSize: 12, fontWeight: 700,
-                                color: fired ? "#ef4444" : "#2e4257",
+                                color: accentColor || "#2e4257",
                               }}>
                                 {fired ? "✓" : "–"}
                               </div>
                               <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ fontSize: 11, color: fired ? "#e2eaf4" : "#4a6070", fontWeight: 500, marginBottom: 2 }}>{sig.label}</div>
+                                <div style={{ fontSize: 11, color: accentColor || "#4a6070", fontWeight: 500, marginBottom: 2 }}>
+                                  {sig.label}
+                                  {isSignal5 && <span style={{ marginLeft: 8, fontSize: 9, fontFamily: "'Space Mono', monospace", letterSpacing: 1, color: fired ? "#f97316" : "#2e4257", background: fired ? "rgba(249,115,22,0.12)" : "#141f2e", padding: "1px 5px", borderRadius: 3 }}>IMAGE-ONLY</span>}
+                                </div>
                                 <div style={{ fontSize: 10, color: "#2e4257" }}>{sig.desc}</div>
                               </div>
-                              <Mono color={fired ? "#ef4444" : "#2e4257"} size={10}>{fired ? sig.weight : "0 pts"}</Mono>
+                              <Mono color={accentColor || "#2e4257"} size={10}>{fired ? sig.weight : "0 pts"}</Mono>
                             </div>
                           );
                         })}
